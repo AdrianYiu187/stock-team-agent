@@ -18,6 +18,22 @@ description: "Skill for the Indicators area of stock-team-agent. 18 symbols acro
 | File | Symbols |
 |------|---------|
 | `scripts/indicators/technical_indicators.py` | calculate_all, sma, ema, macd, _ema_iterative (+13) |
+| `scripts/data_sources/alpha_vantage/indicators.py` | **Alpha Vantage indicators (12 types: RSI, MACD, Bollinger, ATR, SMA, EMA…)** |
+
+## Dual Indicator Sources
+
+Stock_Team_Agent has **two** indicator implementations — different sources, different use cases:
+
+| Source | Location | Provider | Indicators |
+|---------|----------|----------|-------------|
+| **Native** | `scripts/indicators/technical_indicators.py` | yfinance (calculated) | SMA, EMA, MACD, RSI, Bollinger, ATR, ADX, Stochastic, CCI, OBV, VWAP… |
+| **Alpha Vantage** | `scripts/data_sources/alpha_vantage/indicators.py` | Alpha Vantage API | RSI, MACD, Bollinger, ATR, SMA, EMA + 8 more |
+
+**Use Alpha Vantage indicators when**: You want API-verified indicator values with built-in rate limit handling and `safe_ticker_component` security.
+
+**Use native indicators when**: You need indicators not in Alpha Vantage (ADX, Stochastic, CCI, OBV, VWAP) or prefer local calculation.
+
+**Supported Alpha Vantage functions**: `close_50_sma`, `close_200_sma`, `close_10_ema`, `macd`, `macds`, `macdh`, `rsi`, `boll`, `boll_ub`, `boll_lb`, `atr`, `vwma`
 
 ## Entry Points
 

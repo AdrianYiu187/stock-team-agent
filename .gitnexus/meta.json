@@ -1,11 +1,11 @@
 {
   "repoPath": "/Users/adrian/.hermes/skills/productivity/stock-team-agent",
-  "lastCommit": "",
-  "indexedAt": "2026-05-03T17:08:17.921Z",
+  "lastCommit": "1ac8505a8a89e05d94ba9fee02088a517fba2367",
+  "indexedAt": "2026-05-07T03:22:23.078Z",
   "stats": {
-    "files": 36,
-    "nodes": 1523,
-    "edges": 2338,
+    "files": 50,
+    "nodes": 1601,
+    "edges": 2443,
     "communities": 47,
     "processes": 53,
     "embeddings": 0

@@ -14,6 +14,16 @@ import json
 from typing import Dict, List, Any, Optional, Tuple
 from datetime import datetime
 
+# Pydantic schemas (optional - graceful fallback if not installed)
+try:
+    from schemas import (
+        ConsensusResult, AnalystScores, WeightedScores, ConflictRecord,
+        SignalType, Confidence
+    )
+    SCHEMAS_AVAILABLE = True
+except ImportError:
+    SCHEMAS_AVAILABLE = False
+
 
 class ConsensusEngine:
     """
@@ -239,6 +249,77 @@ class ConsensusEngine:
     def get_consensus_history(self) -> List[Dict]:
         """獲取共識歷史"""
         return getattr(self, "history", [])
+
+    def integrate_pydantic(self, analyst_results: Dict[str, Dict], task_type: str, symbol: str) -> "ConsensusResult":
+        """整合並返回 Pydantic 模型（需要 pydantic）。
+
+        Returns:
+            ConsensusResult Pydantic model (or raises if schemas not available)
+        """
+        if not SCHEMAS_AVAILABLE:
+            raise ImportError("Pydantic schemas not available. Install or use integrate() instead.")
+
+        # Use original integrate
+        raw_result = self.integrate(analyst_results, task_type, symbol)
+
+        # Build Pydantic models
+        analyst_scores = {}
+        for name, scores in raw_result["analyst_scores"].items():
+            analyst_scores[name] = AnalystScores(**scores)
+
+        weighted = WeightedScores(**raw_result["weighted_scores"])
+
+        consensus_pct = {
+            "buy": raw_result["consensus"]["buy"],
+            "hold": raw_result["consensus"]["hold"],
+            "sell": raw_result["consensus"]["sell"],
+        }
+
+        conflicts = []
+        for c in raw_result.get("conflicts", []):
+            conflicts.append(ConflictRecord(
+                type=c.get("type", "unknown"),
+                analysts_involved=c.get("buy_analysts", []) + c.get("sell_analysts", []),
+                details=str(c),
+                severity=c.get("severity", "medium"),
+            ))
+
+        # Determine signal strength (5-tier)
+        overall = raw_result["overall_score"]
+        if overall >= 60:
+            signal_strength = 5  # STRONG_BUY
+        elif overall >= 30:
+            signal_strength = 4  # BUY
+        elif overall >= -30:
+            signal_strength = 3  # HOLD
+        elif overall >= -60:
+            signal_strength = 2  # SELL
+        else:
+            signal_strength = 1  # STRONG_SELL
+
+        confidence_val = raw_result["confidence"]
+        if confidence_val >= 0.75:
+            conf_label = "high"
+        elif confidence_val >= 0.50:
+            conf_label = "medium"
+        else:
+            conf_label = "low"
+
+        return ConsensusResult(
+            symbol=symbol,
+            task_type=task_type,
+            timestamp=datetime.now(),
+            analyst_scores=analyst_scores,
+            weighted_scores=weighted,
+            consensus_pct=consensus_pct,
+            overall_score=overall,
+            conflicts=conflicts,
+            recommendation=raw_result["recommendation"],
+            signal_strength=signal_strength,
+            confidence=confidence_val,
+            confidence_label=conf_label,
+            status="success",
+        )
 
 
 def main():

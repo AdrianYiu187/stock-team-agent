@@ -20,6 +20,47 @@ description: "Skill for the Data_sources area of stock-team-agent. 27 symbols ac
 | `scripts/data_sources/enhanced_news_feed_provider.py` | fetch_all_working, analyze_stock_impact, get_market_sentiment, analyze_with_price_context, _get_cache (+9) |
 | `scripts/data_sources/stock_data_provider.py` | get_kline, get_financials, get_news, _get_cache, _set_cache (+2) |
 | `scripts/data_sources/news_feed_provider.py` | fetch_feed, parse_rss, _parse_date, fetch_category, _get_cache (+1) |
+| `scripts/data_sources/alpha_vantage/` | **Alpha Vantage data source (2026-05-11 port from TradingAgents)** |
+| `scripts/data_sources/hybrid_provider.py` | **Hybrid Yahoo Finance + Alpha Vantage fallback provider** |
+
+### Alpha Vantage Module (`scripts/data_sources/alpha_vantage/`)
+
+Ported from TradingAgents (73.3k stars). Provides professional-grade stock data with 12 technical indicators.
+
+**Modules:**
+- `client.py` — Core API client with rate limit handling, `AlphaVantageProvider` class
+- `stock.py` — TIME_SERIES_DAILY_ADJUSTED OHLCV data
+- `fundamentals.py` — OVERVIEW, BALANCE_SHEET, INCOME_STATEMENT, CASHFLOW
+- `indicators.py` — RSI, MACD, Bollinger Bands, ATR, SMA, EMA (12 indicators total)
+- `news.py` — NEWS_SENTIMENT with parse_news_sentiment()
+- `utils.py` — `safe_ticker_component()` **security validation** (blocks path traversal)
+- `__init__.py` — Exports: `AlphaVantageProvider`, `AlphaVantageRateLimitError`, `safe_ticker_component`, `SUPPORTED_INDICATORS`, `INDICATOR_DESCRIPTIONS`
+
+**Security:** `safe_ticker_component()` validates tickers against `^[A-Za-z0-9._\-\^]+$`. Blocks `../../../etc/passwd`, dots-only, and >32-char inputs. **Always use before filesystem interpolation.**
+
+**Indicators supported:** `close_50_sma`, `close_200_sma`, `close_10_ema`, `macd`, `macds`, `macdh`, `rsi`, `boll`, `boll_ub`, `boll_lb`, `atr`, `vwma`
+
+### Hybrid Provider (`scripts/data_sources/hybrid_provider.py`)
+
+3-tier fallback provider: Yahoo Finance → Alpha Vantage → Mock.
+
+```
+HybridDataProvider()
+  .get_kline(symbol)     # OHLCV
+  .get_financials()     # Fundamentals
+  .get_news()           # News
+  .get_market_risk()    # VIX-based risk
+  .get_indicator()      # Technical indicators (Alpha Vantage only)
+```
+
+**API key:** Set `ALPHA_VANTAGE_API_KEY` env var. Free tier: 25 req/day, 5 req/minute.
+
+**Usage:**
+```python
+from scripts.data_sources.hybrid_provider import HybridDataProvider
+provider = HybridDataProvider()
+klines = provider.get_kline("AAPL")
+```
 
 ## Entry Points
 

@@ -17,36 +17,39 @@ description: "Skill for the Consensus area of stock-team-agent. 8 symbols across
 
 | File | Symbols |
 |------|---------|
-| `scripts/consensus/consensus_engine.py` | integrate, _extract_scores, _calculate_weighted_scores, _detect_conflicts, _compute_consensus (+3) |
+| `scripts/train/consensus_engine.py` | integrate, integrate_pydantic, _extract_scores, _calculate_weighted_scores, _detect_conflicts, _compute_consensus (+5) |
+| `scripts/schemas/consensus.py` | **ConsensusResult Pydantic model** |
+| `scripts/schemas/ratings.py` | **5-tier SignalType, FiveTierRating** |
 
 ## Entry Points
 
 Start here when exploring this area:
 
-- **`integrate`** (Function) — `scripts/consensus/consensus_engine.py:45`
-- **`main`** (Function) — `scripts/consensus/consensus_engine.py:243`
+- **`integrate`** (Function) — `scripts/train/consensus_engine.py:46` — legacy dict-based consensus
+- **`integrate_pydantic`** (Function) — `scripts/train/consensus_engine.py:253` — returns typed ConsensusResult
+- **`ConsensusResult`** (Class) — `scripts/schemas/consensus.py` — Pydantic model with `.to_markdown()` method
 
 ## Key Symbols
 
 | Symbol | Type | File | Line |
 |--------|------|------|------|
-| `integrate` | Function | `scripts/consensus/consensus_engine.py` | 45 |
-| `main` | Function | `scripts/consensus/consensus_engine.py` | 243 |
-| `_extract_scores` | Function | `scripts/consensus/consensus_engine.py` | 92 |
-| `_calculate_weighted_scores` | Function | `scripts/consensus/consensus_engine.py` | 107 |
-| `_detect_conflicts` | Function | `scripts/consensus/consensus_engine.py` | 124 |
-| `_compute_consensus` | Function | `scripts/consensus/consensus_engine.py` | 165 |
-| `_generate_recommendation` | Function | `scripts/consensus/consensus_engine.py` | 182 |
-| `_calculate_confidence` | Function | `scripts/consensus/consensus_engine.py` | 210 |
+| `integrate` | Function | `scripts/train/consensus_engine.py` | 46 |
+| `integrate_pydantic` | Function | `scripts/train/consensus_engine.py` | 253 |
+| `ConsensusResult` | Class | `scripts/schemas/consensus.py` | ~50 |
+| `SignalType` | Enum | `scripts/schemas/ratings.py` | — |
+| `FiveTierRating` | Class | `scripts/schemas/ratings.py` | — |
 
-## Execution Flows
+## 5-Tier Signal System
 
-| Flow | Type | Steps |
-|------|------|-------|
-| `Main → _extract_scores` | intra_community | 3 |
-| `Main → _calculate_weighted_scores` | intra_community | 3 |
-| `Main → _detect_conflicts` | intra_community | 3 |
-| `Main → _compute_consensus` | intra_community | 3 |
+| Score Range | Signal | Label |
+|-------------|--------|-------|
+| 0.85–1.00 | STRONG_BUY | 強烈買入 |
+| 0.65–0.84 | BUY | 適度買入 |
+| 0.45–0.64 | HOLD | 持有觀望 |
+| 0.25–0.44 | SELL | 適度賣出 |
+| 0.00–0.24 | STRONG_SELL | 強烈賣出 |
+
+Use `SignalType.from_score(score)` to convert. ConsensusEngine maps overall_score (-100 to +100) to tiers: ≥60→5, ≥30→4, ≥-30→3, ≥-60→2, <-60→1.
 
 ## How to Explore
 
