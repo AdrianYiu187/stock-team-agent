@@ -15,6 +15,7 @@ ANALYST_CHAIN = [
     "FundamentalAnalyst", # 基本面分析師
     "RiskAnalyst",        # 風險管理分析師
     "SentimentAnalyst",   # 情緒/消息面分析師
+    "NewsAnalyst",        # 新聞分析師
     "MacroAnalyst",       # 宏觀分析師
 ]
 

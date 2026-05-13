@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Stock_Team_Agent 共識引擎
-整合5位分析師的結果，產生共識建議
+整合7位分析師的結果，產生共識建議
 
 共識機制：
 1. 權重計算 - 不同分析師在不同任務類型有不同權重
@@ -224,7 +224,7 @@ class ConsensusEngine:
         """計算共識信心度"""
         # 基於分析師數量
         analyst_count = len([r for r in analyst_results.values() if "error" not in r])
-        count_factor = min(analyst_count / 5, 1.0)  # 5位分析師為滿分
+        count_factor = min(analyst_count / 7, 1.0)  # 7位分析師為滿分
         
         # 基於評分一致性
         raw_scores = [r.get("score", 0) for r in analyst_results.values() if "error" not in r]

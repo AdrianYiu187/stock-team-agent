@@ -11,12 +11,14 @@ from .market_analyst import MarketAnalyst
 from .risk_analyst import RiskAnalyst
 from .sentiment_analyst import SentimentAnalyst
 from .macro_analyst import MacroAnalyst
+from .news_analyst import NewsAnalyst
 
 __all__ = [
     "TechnicalAnalyst",
-    "FundamentalAnalyst", 
+    "FundamentalAnalyst",
     "MarketAnalyst",
     "RiskAnalyst",
     "SentimentAnalyst",
     "MacroAnalyst",
+    "NewsAnalyst",
 ]
