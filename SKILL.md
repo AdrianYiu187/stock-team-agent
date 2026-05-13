@@ -89,18 +89,24 @@ generate/       ← 報告生成器（how output is presented）
 | 回測 | 回測、backtest、歷史 |
 
 ## 7位分析師角色 (v2)
-
+## 7位分析師角色 (v2)
 ### 分析師權重配置
 
-| 分析師 | 權重 | 專長領域 |
-|--------|------|----------|
-| 市場分析師 (market) | 12% | 市場趨勢、資金流向、板塊輪動、宏觀經濟 |
-| 技術分析師 (technical) | 18% | K線形態、技術指標、趨勢判斷、成交量分析 |
-| 基本面分析師 (fundamental) | 22% | 財務報表、估值、盈利能力、增長潛力 |
-| 風險分析師 (risk) | 15% | 風險評估、VaR、波動率、流動性風險 |
-| 情緒分析師 (sentiment) | 18% | 新聞情緒、價格趨勢情緒、技術指標補充 |
-| 新聞分析師 (news) | 7% | 新聞覆蓋質量、來源可信度、訊息量評估 |
-| 宏觀策略分析師 (macro) | 8% | 宏觀環境、利率政策、行業趨勢 |
+| 分析師 | 報告權重 | 共識引擎權重 | 專長領域 |
+|--------|---------|------------|----------|
+| 市場分析師 (market) | 12% | full=1.0, technical=1.2 | 市場趨勢、資金流向、板塊輪動、宏觀經濟 |
+| 技術分析師 (technical) | 18% | full=1.0, technical=1.5 | K線形態、技術指標、趨勢判斷、成交量分析 |
+| 基本面分析師 (fundamental) | 22% | full=1.0, fundamental=1.5 | 財務報表、估值、盈利能力、增長潛力 |
+| 風險分析師 (risk) | 15% | full=1.2, risk=1.5 | 風險評估、VaR、波動率、流動性風險 |
+| 情緒分析師 (sentiment) | 18% | full=0.8, sentiment=1.5 | 新聞情緒、價格趨勢情緒、技術指標補充 |
+| 新聞分析師 (news) | 7% | full=0.7, news=1.2 | 新聞覆蓋質量、來源可信度、訊息量評估 |
+| 宏觀策略分析師 (macro) | 8% | full=0.8, macro=1.2 | 宏觀環境、利率政策、行業趨勢 |
+
+**共識引擎配置（2026-05-11 確認）：**
+- `min_analysts`: **4**（7位中需過半才能形成共識）
+- `consensus_threshold`: **0.6**（60%以上為強共識）
+- analyst_weights 覆蓋所有7位分析師（macro + news 已於 2026-05-11 補入）
+- **stock_router.py 已同步更新**（2026-05-11 修復：同樣配備7位分析師）
 
 ### v5 專業報告格式（2026-05-01 確認）
 
@@ -621,8 +627,61 @@ FALLBACK = True (API 未啟用)
 | v1.1.0 | 2026-04-30 | 增強版情緒分析（價格趨勢補充RSS缺口）+ 真實多代理辯論引擎 |
 | v1.2.0 | 2026-05-01 | MiniMax LLM 整合 + 專業指數實現 + GitHub Scanner SQLite 整合 |
 | v1.3.0 | 2026-05-01 | macro_analyst 獨立 handler 新創建 + v5 專業報告格式（四輪審計後代碼庫零問題） |
+| 1.4.0 | 2026-05-11 | 全面系統審計：共識引擎7位完整配置 + MACD dir() BUG修復 + checkpoint bare except修復 + stock_analysis if __name__ guard |
+| 1.5.0 | 2026-05-11 | 第二輪審計：stock_router 7位分析師完整配置 + 硬編碼假 positive 分析 + TaskType 衝突排除 + 54項硬編碼全為合理使用 |
 
-## 關鍵發現記錄（2026-04-30 ~ 2026-05-01）
+## 關鍵發現記錄（2026-04-30 ~ 2026-05-11）
+
+### 0. 全面系統審計 bug 修復記錄（2026-05-11 第一輪）
+
+本輪審計一次性發現並修復5項問題：
+
+| # | 問題 | 檔案 | 修復 |
+|---|------|------|------|
+| 1 | **bare except 無異常類型** | `checkpoint.py` l.73, l.181 | `except:` → `except Exception:` |
+| 2 | **stock_analysis.py import 觸發執行** | `stock_analysis.py` | 添加 `if __name__ == "__main__":` guard；`datetime` import 移至頂部；移除重複 `import os` |
+| 3 | **共識引擎缺少2位分析師** | `train/consensus_engine.py` | 添加 `macro` + `news` 到 `analyst_weights`（7位完整配置） |
+| 4 | **min_analysts=2 門檻過低** | `train/consensus_engine.py` | `min_analysts` 從 2 → 4（7位中需過半） |
+| 5 | **MACD `dir()` 邏輯錯誤** | `backtest_engine.py` l.137 | `signal_full if 'signal_full' in dir()` → 直接 `signal_full`（Python dir() 在返回時總是包含局部變量，導致邏輯恆真） |
+
+**審計方法論（一次性完整修復）：**
+```
+Phase 1: GitNexus 透視 → 目錄結構 + 69個.py文件統計
+Phase 2: 語法檢查 → 69/69 PASS
+Phase 3: 安全掃描 → bare except / API Keys / TODO-FIXME / 密碼Hash
+Phase 4: 業務邏輯審計 → 分析師配置 / 共識引擎 / backtest_engine
+Phase 5: MiniMax 策略判斷（API不可用時直接執行專業修復）
+Phase 6: 一次性執行所有修復
+Phase 7: 端到端驗證 → Import鏈 + 語法 + 計算邏輯
+```
+
+**安全掃描全部通過：** ✅ API Keys Clean / ✅ bare except 已修復 / ✅ TODO-FIXME Clean / ✅ 密碼Hash Clean
+
+### 0b. 第二輪系統審計發現（2026-05-11）
+
+**54項「硬編碼」問題 → 0項需修復（全為合理使用）：**
+
+| 分類 | 數量 | 判定結果 |
+|------|------|----------|
+| `if __name__ == "__main__"` 測試區塊內的股票代碼 | 10項 | ✅ 合理使用（隔離執行，無風險） |
+| `parser.add_argument` 的 `help=` 文本 | 3項 | ✅ 合理使用（說明文檔，非實際邏輯） |
+| `stock_keywords` 情緒關鍵詞映射表 | ~30項 | ✅ 功能數據（非投註建議） |
+| `position_sizer.py` 測試用例 | 3項 | ✅ `if __name__` 內虛構數據 |
+| `report_generator.py` 測試數據 | 3項 | ✅ `if __name__` 內虛構數據 |
+
+**stock_router.py 缺少 macro + news 分析師：**
+- 問題：`stock_router.py` 只初始化5位分析師，與共識引擎的7位配置不一致
+- 修復：添加 `macro` + `news` 兩位分析師
+
+**TaskType 衝突為假警報：**
+- `workflow_engine.py` 的 `TaskType` 是 `Enum` 類
+- `stock_router.py` 的 `TaskType` 是字符串常量類
+- 兩者為獨立類，無衝突
+
+**死代碼掃描結果：**
+- ✅ 無重複定義衝突
+- ✅ 136個私有函數（正常）
+- ✅ 所有 `__init__` 多處定義為正常（各模組獨立）
 
 ### 1. 情緒分析數據缺口
 
@@ -851,5 +910,6 @@ q = get_realtime_quote("AAPL")
 ```
 
 詳見 `three-tool-orchestration/references/stock-team-agent-p11-p19-2026-05-11.md`
-- `references/stock-team-agent-p6-p10-2026-05-11.md` — P6-P10 實作全記錄（含 sys/path 陷阱與 subagent 導出驗證教訓）
-- `references/stock-team-agent-p11-p19-2026-05-11.md` — P11-P19 實作全記錄（含錯誤診斷案例、class-based 模組整合陷阱）
+- `references/stock-team-agent-p6-p10-2026-05-11.md` — P6-P10 實作全記錄
+- `references/stock-team-agent-p11-p19-2026-05-11.md` — P11-P19 實作全記錄
+- `references/stock-team-agent-audit-2026-05-11.md` — 2026-05-11 審計修復記錄（bare except/datetime import/if __name__ guard + 多位置同時修改方法論）

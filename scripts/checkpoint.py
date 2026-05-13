@@ -70,7 +70,7 @@ def save_checkpoint(ticker: str, phase: str, data: dict) -> bool:
         try:
             if 'tmp_path' in locals():
                 os.unlink(tmp_path)
-        except:
+        except Exception:
             pass
         return False
 
@@ -178,7 +178,7 @@ def mark_phase_complete(ticker: str, phase: str) -> bool:
         try:
             if 'tmp_path' in locals():
                 os.unlink(tmp_path)
-        except:
+        except Exception:
             pass
         return False
 

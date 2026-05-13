@@ -134,7 +134,7 @@ def calculate_macd(prices: np.ndarray, fast: int = 12, slow: int = 26, signal: i
     else:
         macd_hist = np.full_like(macd_line, np.nan)
 
-    return macd_line, signal_full if 'signal_full' in dir() else np.full_like(macd_line, np.nan), macd_hist
+    return macd_line, signal_full, macd_hist
 
 
 def calculate_bollinger_bands(prices: np.ndarray, period: int = 20, std_dev: float = 2.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

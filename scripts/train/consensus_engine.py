@@ -39,16 +39,18 @@ class ConsensusEngine:
     def __init__(self):
         # 分析師權重配置（可動態調整）
         self.analyst_weights = {
-            "market": {"full": 1.0, "technical": 1.2, "fundamental": 0.5, "risk": 0.8, "sentiment": 0.8},
-            "technical": {"full": 1.0, "technical": 1.5, "fundamental": 0.5, "risk": 0.6, "sentiment": 0.4},
-            "fundamental": {"full": 1.0, "technical": 0.5, "fundamental": 1.5, "risk": 1.0, "sentiment": 0.5},
-            "risk": {"full": 1.2, "technical": 0.8, "fundamental": 1.0, "risk": 1.5, "sentiment": 0.6},
-            "sentiment": {"full": 0.8, "technical": 0.4, "fundamental": 0.5, "risk": 0.5, "sentiment": 1.5},
+            "market": {"full": 1.0, "technical": 1.2, "fundamental": 0.5, "risk": 0.8, "sentiment": 0.8, "macro": 0.7, "news": 0.5},
+            "technical": {"full": 1.0, "technical": 1.5, "fundamental": 0.5, "risk": 0.6, "sentiment": 0.4, "macro": 0.5, "news": 0.3},
+            "fundamental": {"full": 1.0, "technical": 0.5, "fundamental": 1.5, "risk": 1.0, "sentiment": 0.5, "macro": 0.6, "news": 0.4},
+            "risk": {"full": 1.2, "technical": 0.8, "fundamental": 1.0, "risk": 1.5, "sentiment": 0.6, "macro": 0.8, "news": 0.5},
+            "sentiment": {"full": 0.8, "technical": 0.4, "fundamental": 0.5, "risk": 0.5, "sentiment": 1.5, "macro": 0.5, "news": 0.7},
+            "macro": {"full": 0.8, "technical": 0.5, "fundamental": 0.6, "risk": 0.8, "sentiment": 0.5, "macro": 1.2, "news": 0.6},
+            "news": {"full": 0.7, "technical": 0.3, "fundamental": 0.4, "risk": 0.5, "sentiment": 0.7, "macro": 0.6, "news": 1.2},
         }
         
         # 共識閾值
         self.consensus_threshold = 0.6  # 60%以上共識為強共識
-        self.min_analysts = 2  # 最少需要2位分析師
+        self.min_analysts = 4  # 最少需要4位分析師（7位中至少過半）
         
         # 評分維度
         self.dimensions = ["buy", "hold", "sell"]
