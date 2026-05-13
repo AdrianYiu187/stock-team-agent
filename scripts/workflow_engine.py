@@ -302,31 +302,32 @@ class MultiRoleWorkflow:
 
 def demo_workflow():
     """演示工作流執行"""
-    from handlers.market_analyst import MarketAnalyst
-    from handlers.technical_analyst import TechnicalAnalyst
-    from handlers.fundamental_analyst import FundamentalAnalyst
-    from handlers.risk_analyst import RiskAnalyst
-    from handlers.sentiment_analyst import SentimentAnalyst
+    from handlers import (MarketAnalyst, TechnicalAnalyst, FundamentalAnalyst,
+                          RiskAnalyst, SentimentAnalyst, MacroAnalyst, NewsAnalyst)
     from data_sources.stock_data_provider import StockDataProvider
     
-    # 初始化
+    # 初始化（7 分析師，與共識引擎一致）
     provider = StockDataProvider()
     market = MarketAnalyst(provider)
     technical = TechnicalAnalyst(provider)
     fundamental = FundamentalAnalyst(provider)
     risk = RiskAnalyst(provider)
     sentiment = SentimentAnalyst(provider)
+    macro = MacroAnalyst(provider)
+    news = NewsAnalyst(provider)
     
     # 創建工作流引擎
     workflow = MultiRoleWorkflow()
     
-    # 執行全面分析工作流
+    # 執行全面分析工作流（7 分析師）
     analysts = {
         "market": market,
         "technical": technical,
         "fundamental": fundamental,
         "risk": risk,
-        "sentiment": sentiment
+        "sentiment": sentiment,
+        "macro": macro,
+        "news": news
     }
     
     data = {
