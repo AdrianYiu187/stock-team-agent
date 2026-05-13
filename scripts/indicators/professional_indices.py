@@ -34,14 +34,10 @@ class ProfessionalIndices:
             "risk_score",
             "var_cvar",
             "sharpe_ratio",
-            "sortino_ratio",
-            "omega_ratio",
-            "calmar_ratio",
             "sector_momentum",
             "market_breadth",
             "put_call_ratio",
-            "gold_cross_signal",
-            "death_cross_signal",
+            "gold_cross_death_cross",
         ]
     
     def buffett_indicator(self, market_cap: float, gdp: float) -> Dict[str, Any]:

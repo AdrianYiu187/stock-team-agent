@@ -41,7 +41,7 @@ class StockDataProvider:
         try:
             import yfinance as yf
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="3mo" if period == "daily" else "1mo")
+            hist = ticker.history(period="3mo" if period == "daily" else "1mo")[:limit]
             
             klines = []
             for date, row in hist.iterrows():

@@ -64,6 +64,11 @@ class LLMDebateEngine:
                 "name": "情緒分析師",
                 "description": "擅長新聞情緒、分析師評級、社交媒體",
                 "focus": ["新聞", "評級", "目標價"]
+            },
+            "news": {
+                "name": "新聞分析師",
+                "description": "擅長即時新聞事件、突發消息、行業動態",
+                "focus": ["突發", "公告", "行業新聞", "政策"]
             }
         }
     
@@ -204,7 +209,7 @@ class LLMDebateEngine:
     
     def run_debate(self, symbol: str = "") -> Dict[str, Any]:
         """
-        運行完整辯論（5輪）
+        運行完整辯論（2輪 × 7角色）
         
         返回:
             {

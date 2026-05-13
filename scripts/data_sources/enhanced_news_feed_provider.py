@@ -121,6 +121,8 @@ class EnhancedNewsFeedProvider:
         """抓取RSS Feed"""
         try:
             ctx = ssl.create_default_context()
+            # ⚠️ SSL 驗證已停用（某些 RSS 源使用過期/自簽發書）
+            # 生產環境建議恢復，或改用 requests 庫並配置 proper certificates
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
             

@@ -144,7 +144,7 @@ class StockTechnicalIndicators:
                 supertrend.append(None)
                 continue
                 
-            prev_st = supertrend[-1] if supertrend else closes[i]
+            prev_st = supertrend[-1] if supertrend and supertrend[-1] is not None else (upper_band[i] if direction == -1 else lower_band[i])
             
             if direction == 1:
                 if closes[i] < prev_st:
@@ -208,16 +208,22 @@ class StockTechnicalIndicators:
     # ========== 動能指標 ==========
     
     def rsi(self, data: List[float], period: int = 14) -> Optional[float]:
-        """RSI 相對強度指標"""
+        """RSI 相對強度指標 — 使用 Wilder's Smoothing (SMMA)"""
         if len(data) < period + 1:
             return None
         deltas = [data[i] - data[i-1] for i in range(1, len(data))]
-        gains = [d if d > 0 else 0 for d in deltas[-period:]]
-        losses = [-d if d < 0 else 0 for d in deltas[-period:]]
-        
-        avg_gain = sum(gains) / period
-        avg_loss = sum(losses) / period
-        
+        gains = [d if d > 0 else 0 for d in deltas]
+        losses = [-d if d < 0 else 0 for d in deltas]
+
+        # Seed with SMA for first period
+        avg_gain = sum(gains[:period]) / period
+        avg_loss = sum(losses[:period]) / period
+
+        # Wilder's smoothing (SMMA)
+        for i in range(period, len(gains)):
+            avg_gain = (avg_gain * (period - 1) + gains[i]) / period
+            avg_loss = (avg_loss * (period - 1) + losses[i]) / period
+
         if avg_loss == 0:
             return 100
         rs = avg_gain / avg_loss
@@ -233,12 +239,23 @@ class StockTechnicalIndicators:
         highest_high = max(k["high"] for k in recent)
         current_close = kline[-1]["close"]
         
-        if highest_high == lowest_low:
-            k = 50
-        else:
-            k = (current_close - lowest_low) / (highest_high - lowest_low) * 100
-        
-        return {"k": k, "d": k * 0.95}  # Simplified D
+        # %K = (Close - Lowest Low) / (Highest High - Lowest Low) * 100
+        # %D = SMA of %K over d_period (default 3)
+        k_values = []
+        for i in range(k_period - 1, len(kline)):
+            window = kline[i - k_period + 1:i + 1]
+            lowest_low = min(k["low"] for k in window)
+            highest_high = max(k["high"] for k in window)
+            current_close = kline[i]["close"]
+            if highest_high == lowest_low:
+                k_values.append(50)
+            else:
+                k_values.append((current_close - lowest_low) / (highest_high - lowest_low) * 100)
+
+        if len(k_values) < d_period:
+            return {"k": k_values[-1] if k_values else None, "d": None}
+        d = sum(k_values[-d_period:]) / d_period
+        return {"k": k_values[-1], "d": d}
     
     def williams_r(self, kline: List[Dict], period: int = 14) -> Optional[float]:
         """Williams %R"""

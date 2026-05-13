@@ -446,7 +446,7 @@ if __name__ == "__main__":
     _add_report_line("")
     _add_report_line("💡 核心論點：")
     _add_report_line(f"   波動性{f'{volatility:.1f}%' if volatility else 'N/A'}{f'屬於{vol_desc}' if volatility else '無法計算'}。")
-    _add_report_line(f"   Sharpe {f'{sharpe:.2f}' if sharpe else 'N/A'}{f'顯示 Sharper_desc' if sharpe else '無法計算'}。")
+    _add_report_line(f"   Sharpe {f'{sharpe:.2f}' if sharpe else 'N/A'}{f'，{sharpe_desc}' if sharpe else '，無法計算'}。")
     _add_report_line(f"   從高點已回落{f'{abs(max_dd):.0f}%' if max_dd else 'N/A'}顯示風險已大量釋放。")
     _add_report_line(f"   綜合來看，VaR顯示尾部風險顯著，但風險回報吸引力有限。")
     

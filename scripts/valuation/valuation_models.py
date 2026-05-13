@@ -52,8 +52,11 @@ class ValuationModels:
         # Terminal Value
         if len(cash_flows) > 0:
             last_cf = cash_flows[-1]
-            terminal_value = last_cf * (1 + terminal_growth) / (discount_rate - terminal_growth)
-            pv_terminal = terminal_value / ((1 + discount_rate) ** len(cash_flows))
+            if discount_rate <= terminal_growth:
+                pv_terminal = 0  # 避免除零，terminal_growth >= discount_rate 無意義
+            else:
+                terminal_value = last_cf * (1 + terminal_growth) / (discount_rate - terminal_growth)
+                pv_terminal = terminal_value / ((1 + discount_rate) ** len(cash_flows))
         else:
             pv_terminal = 0
         
@@ -158,7 +161,7 @@ class ValuationModels:
         intrinsic = math.sqrt(22.5 * eps * (8.5 + 2 * g))
         
         # Fair PE based on bond yield
-        fair_pe = 8.5 / (bond_yield * 100) if bond_yield > 0 else 20
+        fair_pe = 8.5 / bond_yield if bond_yield > 0 else 20
         fair_price = eps * fair_pe
         
         return {
