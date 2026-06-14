@@ -176,19 +176,25 @@ class ConsensusEngine:
         return conflicts
     
     def _compute_consensus(self, weighted_scores: Dict[str, float]) -> Dict[str, Any]:
-        """計算共識"""
-        total = sum(weighted_scores.values())
-        
-        if total == 0:
-            return {"buy": 0, "hold": 0, "sell": 0, "overall": 0}
-        
-        normalized = {k: v/total for k, v in weighted_scores.items()}
-        overall = (normalized.get("buy", 0) - normalized.get("sell", 0)) * 100
-        
+        """
+        計算共識
+
+        v2.2: weighted_scores 已經在 _calculate_weighted_scores 中歸一化過，
+        此處不應再次除以 total（會把已經是比例的值縮為原來的平方）。
+        修正：直接使用已歸一化的值。
+        """
+        # 確保三個維度都存在
+        buy = max(0.0, float(weighted_scores.get("buy", 0)))
+        hold = max(0.0, float(weighted_scores.get("hold", 0)))
+        sell = max(0.0, float(weighted_scores.get("sell", 0)))
+
+        # 加權分已歸一化（0..1），轉成百分比（0..100）
+        overall = (buy - sell) * 100  # -100..+100
+
         return {
-            "buy": round(normalized.get("buy", 0) * 100, 2),
-            "hold": round(normalized.get("hold", 0) * 100, 2),
-            "sell": round(normalized.get("sell", 0) * 100, 2),
+            "buy": round(buy * 100, 2),
+            "hold": round(hold * 100, 2),
+            "sell": round(sell * 100, 2),
             "overall": round(overall, 2)
         }
     

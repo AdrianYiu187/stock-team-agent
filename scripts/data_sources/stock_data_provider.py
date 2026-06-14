@@ -122,35 +122,67 @@ class StockDataProvider:
             logging.warning(f"[StockDataProvider] get_news({symbol}) failed: {e} — returning empty")
             return []
     
-    def get_market_risk(self) -> Dict:
-        """獲取市場風險指標"""
+    def get_market_risk(self, region: str = "us") -> Dict:
+        """獲取市場風險指標
+
+        Args:
+            region: "us" → ^VIX, "hk" → VHSI (恒指波幅指數), "cn" → 000300.SH
+        """
+        # 不同市場的波幅指數代碼
+        region_symbols = {
+            "us": ("^VIX", "VIX"),
+            "hk": ("^VHSI", "VHSI"),
+            "cn": ("000300.SS", "滬深300"),
+        }
+        symbol, label = region_symbols.get(region.lower(), region_symbols["us"])
+
         try:
             import yfinance as yf
-            vix = yf.Ticker("^VIX")
-            vix_data = vix.history(period="1mo")
-            current_vix = vix_data["Close"].iloc[-1] if len(vix_data) > 0 else 20
-            
+            ticker = yf.Ticker(symbol)
+            data = ticker.history(period="1mo")
+            current_value = float(data["Close"].iloc[-1]) if len(data) > 0 else None
+
+            if current_value is None:
+                return {"vix": 20, "volatility": 0.25, "risk_level": "medium", "⚠️ FALLBACK": True, "region": region}
+
+            # 不同市場的風險閾值不同
+            if region == "us":
+                high_thr, med_thr = 30, 20
+            elif region == "hk":
+                high_thr, med_thr = 35, 22
+            else:  # cn
+                high_thr, med_thr = 35, 25
+
+            if current_value > high_thr:
+                risk_level = "high"
+            elif current_value > med_thr:
+                risk_level = "medium"
+            else:
+                risk_level = "low"
+
             return {
-                "vix": current_vix,
-                "volatility": min(current_vix / 40, 1.0),
-                "risk_level": "high" if current_vix > 30 else "medium" if current_vix > 20 else "low"
+                "vix": current_value,
+                "volatility": min(current_value / 40, 1.0),
+                "risk_level": risk_level,
+                "region": region,
+                "label": label
             }
         except Exception as e:
             import logging
-            logging.warning(f"[StockDataProvider] get_market_risk() failed: {e} — using fallback")
-            return {"vix": 20, "volatility": 0.25, "risk_level": "medium", "⚠️ FALLBACK": True}
+            logging.warning(f"[StockDataProvider] get_market_risk({region}) failed: {e} — using fallback")
+            return {"vix": 20, "volatility": 0.25, "risk_level": "medium", "⚠️ FALLBACK": True, "region": region}
     
     def _get_cache(self, key: str) -> Optional[Any]:
         """獲取緩存"""
         if key in self.cache:
-            data, timestamp = self.cache[key]
-            if (datetime.now() - timestamp).total_seconds() < self.cache_ttl:
+            data, timestamp, ttl = self.cache[key]
+            if (datetime.now() - timestamp).total_seconds() < ttl:
                 return data
         return None
-    
+
     def _set_cache(self, key: str, data: Any, ttl: int = 300):
-        """設置緩存"""
-        self.cache[key] = (data, datetime.now())
+        """v2.2: 修正 TTL 參數 — 每個 key 獨立存儲 ttl"""
+        self.cache[key] = (data, datetime.now(), ttl)
     
     def _generate_mock_kline(self, limit: int) -> List[Dict]:
         """生成模擬K線（⚠️ MOCK_DATA - 僅用於API失敗時的測試）"""

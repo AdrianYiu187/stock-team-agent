@@ -3,7 +3,13 @@
 import logging
 import atexit
 import os
+import sys
+import argparse
+import json
+from typing import Dict, List, Optional, Any
 from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 _LOG_FILE = "/tmp/stock_analysis_progress.txt"
 
@@ -16,19 +22,6 @@ def _log(msg):
 
 _log("Script starting")
 atexit.register(lambda: _log("Script exiting"))
-
-
-"""
-Stock_Team_Agent 統一分析腳本 (v5 - 專業投資報告版)
-- 7位專業分析師 + MiniMax LLM 真實多代理辯論（5輪）
-- 每位角色完整推理過程（數據→任務→解釋→結論）
-- 實測成功RSS源 + 價格趨勢情緒判斷
-- 專業投資報告格式：短/中/長期框架
-"""
-
-import sys
-import argparse
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # 命令列參數解析
 parser = argparse.ArgumentParser(description='Stock_Team_Agent 深度分析')
@@ -798,7 +791,76 @@ if __name__ == "__main__":
         name: {"score": analysts_result.get(name, {}).get("final_score", init_pos["score"]), "signal": init_pos["signal"]}
         for name, init_pos in initial_positions.items()
     }
-    
+
+    # ============================================================
+    # 第四階段 B：ConsensusEngine 數學共識（v5.1 新增）
+    # 與 LLM 語義共識並行，提供多因子置信度 + 衝突檢測 + 5-tier 信號
+    # ============================================================
+    _log("PHASE4B_CONSENSUS")
+
+    _add_report_line("=" * 80)
+    _add_report_line("【共識引擎數學共識（7分析師加權整合）】")
+    _add_report_line("-" * 80)
+
+    # 構建 ConsensusEngine 需要的 buy/hold/sell 評分（從 overall score 推導）
+    # 啟發式：score=0.7 → buy=0.7/hold=0.2/sell=0.1; score=0.5 → 三方均衡
+    def _score_to_bhs(score: float) -> Dict[str, float]:
+        score = max(0.0, min(1.0, float(score)))
+        if score >= 0.5:
+            buy = 0.4 + 0.6 * (score - 0.5) / 0.5   # 0.4..1.0
+            hold = 0.6 * (1.0 - (score - 0.5) / 0.5)  # 0.6..0.0
+            sell = 0.0
+        else:
+            buy = 0.0
+            hold = 0.6 * (1.0 - (0.5 - score) / 0.5)  # 0.0..0.6
+            sell = 0.4 + 0.6 * (0.5 - score) / 0.5   # 0.4..1.0
+        # 歸一化至 1.0
+        total = buy + hold + sell
+        if total > 0:
+            return {"buy": buy/total, "hold": hold/total, "sell": sell/total}
+        return {"buy": 0.33, "hold": 0.34, "sell": 0.33}
+
+    _analyst_results_for_ce = {}
+    for name, pos in final_positions.items():
+        bhs = _score_to_bhs(pos["score"])
+        _analyst_results_for_ce[name] = {
+            "signal": pos["signal"],
+            "score": pos["score"],
+            "buy_score": bhs["buy"],
+            "hold_score": bhs["hold"],
+            "sell_score": bhs["sell"],
+            "confidence": pos["score"],  # 暫用 score 作為 confidence 代理
+        }
+
+    # 5-tier 信號映射
+    _signal_to_5tier = {
+        "strong_buy": 5, "buy": 4,
+        "hold": 3, "neutral": 3,
+        "sell": 2, "strong_sell": 1,
+    }
+
+    _ce_consensus = {}
+    try:
+        from consensus.consensus_engine import ConsensusEngine as _CE
+        _ce_engine = _CE()
+        _ce_consensus = _ce_engine.integrate(_analyst_results_for_ce, "full", STOCK_CODE)
+        _c = _ce_consensus["consensus"]
+        _overall = _c["overall"]  # -100..+100
+        _add_report_line(f"   📊 買入比例: {_c['buy']:.1f}% | 持有: {_c['hold']:.1f}% | 賣出: {_c['sell']:.1f}%")
+        _add_report_line(f"   🎯 整體得分: {_overall:+.1f} (範圍 -100..+100)")
+        _add_report_line(f"   🤖 數學建議: {_ce_consensus['recommendation']}")
+        _add_report_line(f"   🔒 多因子置信度: {_ce_consensus['confidence']:.2f}")
+        # 衝突檢測
+        if _ce_consensus.get("conflicts"):
+            for _cf in _ce_consensus["conflicts"]:
+                _add_report_line(f"   ⚠️ 衝突: {_cf.get('type')} ({_cf.get('severity')})")
+                if _cf.get("buy_analysts") and _cf.get("sell_analysts"):
+                    _add_report_line(f"      買方: {', '.join(_cf['buy_analysts'])} | 賣方: {', '.join(_cf['sell_analysts'])}")
+        _log(f"CE_CONSENSUS ok overall={_overall:.1f} conf={_ce_consensus['confidence']:.2f}")
+    except Exception as _e:
+        _add_report_line(f"   ⚠️ ConsensusEngine 整合失敗: {_e}")
+        _log(f"CE_CONSENSUS failed: {_e}")
+
     # ============================================================
     # 第五階段：共識計算
     # ============================================================
@@ -987,15 +1049,25 @@ if __name__ == "__main__":
     _add_report_line("-" * 80)
     _add_report_line(f"   📊 綜合評分: {final_score:.2f}/1.00")
     _add_report_line(f"   📌 投資建議: {rec}")
-    if consensus and consensus.get("confidence"):
-        _add_report_line(f"   🎯 置信度: {consensus.get('confidence'):.2f}")
-    
+    # v5.1: 結合 LLM 語義置信度 + ConsensusEngine 數學置信度（取較低者更保守）
+    _llm_conf = (consensus.get("confidence", 0) if consensus else 0) or 0
+    _ce_conf = _ce_consensus.get("confidence", 0) if _ce_consensus else 0
+    _combined_confidence = min(_llm_conf, _ce_conf) if _ce_conf > 0 else _llm_conf
+    if _ce_conf > 0:
+        _add_report_line(f"   🎯 置信度（LLM 語義）: {_llm_conf:.2f}")
+        _add_report_line(f"   🔒 置信度（ConsensusEngine 數學）: {_ce_conf:.2f}")
+        _add_report_line(f"   🛡️  合併置信度（取保守值）: {_combined_confidence:.2f}")
+    elif _llm_conf:
+        _add_report_line(f"   🎯 置信度: {_llm_conf:.2f}")
+    consensus = consensus or {}  # 確保 dict 存在
+    consensus["confidence"] = _combined_confidence or final_score  # 覆寫
+
     # ===== P16: 置信度加權倉位計算 =====
     try:
         from position_sizer import calculate_position_size, format_position_report
         _ps = calculate_position_size(
             ticker=STOCK_CODE,
-            confidence=consensus.get("confidence", final_score) if consensus else final_score,
+            confidence=_combined_confidence or final_score,
             final_score=final_score,
             account_size=100000.0
         )
@@ -1031,7 +1103,24 @@ if __name__ == "__main__":
         _result["final_score"] = round(final_score, 4)
         _result["recommendation"] = rec
         _result["consensus_signal"] = consensus.get("consensus_signal", "hold") if consensus else "hold"
-        _result["confidence"] = round(consensus.get("confidence", final_score), 3) if consensus else round(final_score, 3)
+        _result["confidence"] = round(_combined_confidence or (consensus.get("confidence", final_score) if consensus else final_score), 3)
+        # v5.1: ConsensusEngine 數學共識
+        if _ce_consensus:
+            _result["math_consensus"] = {
+                "buy_pct": _ce_consensus["consensus"]["buy"],
+                "hold_pct": _ce_consensus["consensus"]["hold"],
+                "sell_pct": _ce_consensus["consensus"]["sell"],
+                "overall_score": _ce_consensus["consensus"]["overall"],
+                "math_recommendation": _ce_consensus["recommendation"],
+                "math_confidence": _ce_consensus["confidence"],
+                "conflicts": _ce_consensus.get("conflicts", []),
+                "consensus_signal_5tier": (
+                    5 if _ce_consensus["consensus"]["overall"] >= 60 else
+                    4 if _ce_consensus["consensus"]["overall"] >= 30 else
+                    3 if _ce_consensus["consensus"]["overall"] >= -30 else
+                    2 if _ce_consensus["consensus"]["overall"] >= -60 else 1
+                ),
+            }
         _result["target_prices"] = {
             "short_term": round(short_target, 2),
             "mid_term": round(mid_target, 2),

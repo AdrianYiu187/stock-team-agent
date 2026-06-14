@@ -10,28 +10,38 @@ Stock_Team_Agent LLM驅動辯論引擎
 4. 完整的共識達成機制
 """
 
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import logging
+
+_log = logging.getLogger(__name__)
 
 
 class LLMDebateEngine:
     """
     LLM驅動的多分析師辯論引擎
-    
+
     使用 MiniMax API 動態生成:
     - 各分析師的觀點和論據
     - 分析師之間的挑戰和反駁
     - 最終共識建議
+
+    性能優化（v5.1）：
+    - 並行 LLM 調用：每輪 7 個分析師同時調用，耗時 7× → 1×
+    - 配置 max_workers 防止 API 限流
     """
-    
-    def __init__(self, llm_integration=None):
+
+    def __init__(self, llm_integration=None, max_workers: int = 4):
         self.llm = llm_integration  # MiniMaxLLM 實例
         self.analysts: Dict[str, Dict] = {}
         self.messages: List[Dict] = []
         self.debate_rounds = 0
         self.max_rounds = 2
         self.debate_log: List[Dict] = []
+        # 並行 LLM 調用 worker 數（防止 API 限流；建議 ≤7）
+        self.max_workers = max_workers
         
         # 分析師角色定義
         self.role_configs = {
@@ -102,41 +112,80 @@ class LLMDebateEngine:
             )
         return "\n".join(context_parts)
     
-    def _execute_llm_driven_round(self, round_num: int) -> List[Dict]:
+    def _call_one_analyst(self, analyst_name: str, analyst: Dict, context: str, round_num: int) -> Tuple[str, Optional[Dict]]:
         """
-        執行一輪LLM驅動的辯論
-        
-        每個分析師都會調用 MiniMax API 生成真正的觀點
+        單個分析師的 LLM 調用（包裝為線程安全函數供並行使用）
+
+        Returns:
+            (analyst_name, llm_result_dict or None)
         """
-        self.debate_rounds = round_num
-        new_messages = []
-        
-        if not self.llm:
-            # 無LLM時使用簡化邏輯
-            return self._execute_fallback_round(round_num)
-        
-        # 每個分析師生成觀點
-        for analyst_name, analyst in self.analysts.items():
-            role = analyst["role"]
-            position = analyst["position"]
-            context = self._get_debate_context(exclude_analyst=analyst_name)
-            
-            # 調用LLM生成觀點
+        try:
             llm_result = self.llm.generate_debate_argument(
                 analyst_role=analyst["role"],
                 analyst_name=analyst["name"],
-                position=position,
+                position=analyst["position"],
                 debate_context=context,
                 round_num=round_num
             )
-            
+            return (analyst_name, llm_result)
+        except Exception as e:
+            _log.warning(f"LLM call failed for {analyst_name}: {e}")
+            return (analyst_name, None)
+
+    def _execute_llm_driven_round(self, round_num: int) -> List[Dict]:
+        """
+        執行一輪LLM驅動的辯論
+
+        每個分析師都會調用 MiniMax API 生成真正的觀點
+        v5.1：並行執行 LLM 調用（7 個分析師同時），耗時 ~7× 縮短
+        """
+        self.debate_rounds = round_num
+        new_messages = []
+
+        if not self.llm:
+            # 無LLM時使用簡化邏輯
+            return self._execute_fallback_round(round_num)
+
+        # 預先生成每位分析師的 context（每個人排除自己的立場）
+        contexts: Dict[str, str] = {
+            name: self._get_debate_context(exclude_analyst=name)
+            for name in self.analysts
+        }
+
+        # 並行調用 LLM（v5.1 性能優化）
+        results: Dict[str, Optional[Dict]] = {}
+        analyst_list = list(self.analysts.items())
+        n_workers = min(self.max_workers, len(analyst_list))
+
+        if n_workers <= 1 or len(analyst_list) <= 1:
+            # 單 worker 模式（向後相容）
+            for name, analyst in analyst_list:
+                _, result = self._call_one_analyst(name, analyst, contexts[name], round_num)
+                results[name] = result
+        else:
+            with ThreadPoolExecutor(max_workers=n_workers) as executor:
+                future_to_name = {
+                    executor.submit(
+                        self._call_one_analyst, name, analyst, contexts[name], round_num
+                    ): name
+                    for name, analyst in analyst_list
+                }
+                for future in as_completed(future_to_name):
+                    name, llm_result = future.result()
+                    results[name] = llm_result
+
+        # 按註冊順序處理結果（保證消息順序穩定）
+        for analyst_name, analyst in analyst_list:
+            llm_result = results.get(analyst_name)
             if llm_result:
                 analyst["llm_generated_arguments"].append(llm_result)
-                
+
                 # 根據LLM結果調整立場
                 adjustment = llm_result.get("adjustment", 0)
-                analyst["score"] = max(0, min(1, analyst["score"] + adjustment))
-                
+                current = analyst.get("score", 0.5)
+                if isinstance(current, (int, float)):
+                    analyst["score"] = max(0.0, min(1.0, current + adjustment))
+
                 # 記錄消息
                 msg = self.send_message(
                     from_analyst=analyst_name,
@@ -152,14 +201,14 @@ class LLMDebateEngine:
                     }
                 )
                 new_messages.append(msg)
-                
+
                 # 如果有讓步，記錄
                 if llm_result.get("concession", "no") == "yes":
                     analyst["concessions_made"].append(llm_result.get("argument", ""))
-        
+
         # 分析師之間的交叉質詢
         self._execute_cross_challenges(new_messages)
-        
+
         return new_messages
     
     def _execute_cross_challenges(self, messages: List[Dict]):

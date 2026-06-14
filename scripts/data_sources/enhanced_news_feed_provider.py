@@ -404,13 +404,14 @@ class EnhancedNewsFeedProvider:
     
     def _get_cache(self, key: str) -> Optional[Any]:
         if key in self.cache:
-            data, timestamp = self.cache[key]
-            if (datetime.now() - timestamp).total_seconds() < self.cache_ttl:
+            data, timestamp, ttl = self.cache[key]
+            if (datetime.now() - timestamp).total_seconds() < ttl:
                 return data
         return None
-    
+
     def _set_cache(self, key: str, data: Any, ttl: int = 300):
-        self.cache[key] = (data, datetime.now())
+        """v2.2: 修正 TTL 參數 — 每個 key 獨立存儲 ttl"""
+        self.cache[key] = (data, datetime.now(), ttl)
     
     @property
     def llm(self):
