@@ -119,20 +119,93 @@ if __name__ == "__main__":
     _add_report_line("【第一階段：數據收集】")
     _add_report_line("-" * 80)
     
-    # yfinance 數據（容錯包圍）
+    # ============================================================
+    # v5.2: 並行化數據獲取（5 個 IO 調用並行，預期 5-10x 加速）
+    # ThreadPoolExecutor 用於 IO 密集型任務（不釋放 GIL 的 IO）
+    # yfinance 內部多次 HTTP 調用 → 包成單一任務避免重複創建 session
+    # ============================================================
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import time as _time
+
+    _t_io_start = _time.time()
+
+    def _fetch_yfinance():
+        """yfinance 完整數據（info + 1y + 6mo）"""
+        _t = yf.Ticker(STOCK_CODE)
+        _info = _t.info or {}
+        _hist = _t.history(period='1y') if hasattr(_t, 'history') else pd.DataFrame()
+        _hist_6m = _t.history(period='6mo') if hasattr(_t, 'history') else pd.DataFrame()
+        return _info, _hist, _hist_6m
+
+    def _fetch_finnhub_quote():
+        """Finnhub 即時報價"""
+        try:
+            from data_sources.realtime_quotes import get_realtime_quote
+            return get_realtime_quote(STOCK_CODE)
+        except Exception as _e:
+            logging.debug(f"Finnhub import/call failed: {_e}")
+            return None
+
+    def _fetch_rss_news():
+        """RSS 新聞（5+ 來源）"""
+        _prov = EnhancedNewsFeedProvider()
+        return _prov.fetch_all_working(limit_per_source=15)
+
+    def _fetch_social_sentiment():
+        """Reddit/PTT 社會情緒"""
+        try:
+            from data_sources.social_sentiment_provider import get_combined_social_sentiment
+            return get_combined_social_sentiment(STOCK_CODE)
+        except Exception as _e:
+            logging.debug(f"Social sentiment import/call failed: {_e}")
+            return None
+
+    def _fetch_macro():
+        """宏觀環境分析（純 CPU 但有 import + 邏輯 IO）"""
+        try:
+            from data_sources.stock_data_provider import StockDataProvider
+            _dp = StockDataProvider()
+            _ma = MacroAnalyst(_dp)
+            return _ma.analyze(STOCK_CODE, "macro", "macro environment")
+        except Exception as _e:
+            logging.debug(f"MacroAnalyst failed: {_e}")
+            return {"score_dict": {"confidence": 0.40, "signal": "neutral"}, "summary": "宏觀分析不可用", "env_items": []}
+
+    # 並行啟動 5 個 IO 任務
+    _io_tasks = {
+        "yfinance": _fetch_yfinance,
+        "finnhub": _fetch_finnhub_quote,
+        "rss": _fetch_rss_news,
+        "social": _fetch_social_sentiment,
+        "macro": _fetch_macro,
+    }
+
+    _io_results = {}
+    with ThreadPoolExecutor(max_workers=5) as _executor:
+        _futures = {name: _executor.submit(fn) for name, fn in _io_tasks.items()}
+        for _fname, _fut in _futures.items():
+            try:
+                _io_results[_fname] = _fut.result(timeout=60)
+            except Exception as _e:
+                logging.warning(f"[StockAnalysis] {_fname} failed: {_e}")
+                _io_results[_fname] = None
+
+    _t_io_elapsed = _time.time() - _t_io_start
+    logging.warning(f"[StockAnalysis] 並行 IO 完成: {_t_io_elapsed:.2f}s (5 tasks)")
+
+    # yfinance 結果
     try:
-        ticker = yf.Ticker(STOCK_CODE)
-        info = ticker.info or {}
-        hist = ticker.history(period='1y') if hasattr(ticker, 'history') else pd.DataFrame()
-        hist_6m = ticker.history(period='6mo') if hasattr(ticker, 'history') else pd.DataFrame()
-        yfinance_success = True
+        info, hist, hist_6m = _io_results.get("yfinance") or ({}, pd.DataFrame(), pd.DataFrame())
+        yfinance_success = bool(info)
     except Exception as e:
-        logging.warning(f"[StockAnalysis] yfinance 獲取失敗: {e}")
+        logging.warning(f"[StockAnalysis] yfinance 結果解包失敗: {e}")
         ticker = None
         info = {}
         hist = pd.DataFrame()
         hist_6m = pd.DataFrame()
         yfinance_success = False
+    if not yfinance_success:
+        ticker = None
     
     # 市場數據（通用fallback，不 hardcode 特定股票數值）
     price = float(info.get('currentPrice') or info.get('regularMarketPrice') or 0)
@@ -140,10 +213,9 @@ if __name__ == "__main__":
     week52_low = float(info.get('fiftyTwoWeekLow', 0) or 0)
     week52_high = float(info.get('fiftyTwoWeekHigh', 0) or 0)
     
-    # ===== P14: 即時報價覆寫（Finnhub）=====
+    # ===== P14: 即時報價覆寫（Finnhub，從並行 IO 結果）=====
     try:
-        from data_sources.realtime_quotes import get_realtime_quote
-        _rt = get_realtime_quote(STOCK_CODE)
+        _rt = _io_results.get("finnhub") if isinstance(_io_results.get("finnhub"), dict) else None
         if _rt and _rt.get("price"):
             _add_report_line(f"📡 即時報價: ${_rt.get('price')} ({_rt.get('source', 'Finnhub')})")
             price = float(_rt.get("price", price))
@@ -251,23 +323,24 @@ if __name__ == "__main__":
     _add_report_line("【第二階段：RSS 新聞情緒分析】")
     _add_report_line("-" * 80)
     
+    # v5.2: 從並行 IO 結果取 RSS（避免重複創建 provider 和重複 HTTP）
     provider = EnhancedNewsFeedProvider()
-    all_feeds = provider.fetch_all_working(limit_per_source=15)
+    _rss_result = _io_results.get("rss") or {}
+    all_feeds = _rss_result if isinstance(_rss_result, dict) else {}
     combined = all_feeds.get("all", [])
-    
+
     sentiment_result = provider.analyze_with_price_context(
         combined, STOCK_CODE, ytd_return=ytd_return, momentum_20d=momentum_20d, volatility=volatility
     )
-    
+
     _add_report_line(f"✅ RSS來源: {list(all_feeds.keys())}")
     _add_report_line(f"📊 總新聞數: {len(combined)} 條")
     _add_report_line("")
-    
-    # ===== P12: 社會情緒抓取（Reddit/PTT）=====
+
+    # ===== P12: 社會情緒（從並行 IO 結果，避免重複抓取）=====
     try:
-        from data_sources.social_sentiment_provider import get_combined_social_sentiment
-        _social = get_combined_social_sentiment(STOCK_CODE)
-        if _social and _social.get("posts_found", 0) > 0:
+        _social = _io_results.get("social")
+        if _social and isinstance(_social, dict) and _social.get("posts_found", 0) > 0:
             _add_report_line(f"🌐 社會情緒: Reddit {_social.get('reddit_bullish_pct', 0):.0f}% 看漲 | PTT {_social.get('ptt_bullish_pct', 0):.0f}% 看漲")
             sentiment_result['social'] = _social
         else:
@@ -543,11 +616,16 @@ if __name__ == "__main__":
     _add_report_line("【宏觀策略分析師 (Macro Strategy Analyst)】")
     _add_report_line("-" * 80)
     
-    # 使用真實 MacroAnalyst 獲取數據
-    from data_sources.stock_data_provider import StockDataProvider
-    _data_provider = StockDataProvider()
-    _macro_analyst = MacroAnalyst(_data_provider)
-    macro_result = _macro_analyst.analyze(STOCK_CODE, task_type="analysis", user_request="")
+    # v5.2: 重用並行 IO 結果中的宏觀分析（避免重複 yfinance 調用 ^TNX/^VIX/GC=F/DX-Y）
+    _macro_result_obj = _io_results.get("macro") if isinstance(_io_results.get("macro"), dict) else None
+    if _macro_result_obj and not _macro_result_obj.get("error"):
+        macro_result = _macro_result_obj
+    else:
+        # Fallback：並行調用失敗時重新執行
+        from data_sources.stock_data_provider import StockDataProvider
+        _data_provider = StockDataProvider()
+        _macro_analyst = MacroAnalyst(_data_provider)
+        macro_result = _macro_analyst.analyze(STOCK_CODE, task_type="analysis", user_request="")
     
     macro_data = macro_result.get("macro_data", {})
     environment = macro_result.get("environment", {})

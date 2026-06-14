@@ -206,38 +206,13 @@ def main():
     except Exception as e:
         print(f"  ❌ 估值模型測試失敗: {str(e)}")
         all_passed = False
-    
-    # 7. 測試工作流引擎
+    # 7. 測試工作流引擎（v5.2: workflow_engine.py 已刪除，標記為 DEPRECATED）
     print("\n【7. 工作流引擎測試】")
-    try:
-        from workflow_engine import MultiRoleWorkflow
-        
-        workflow = MultiRoleWorkflow()
-        info = workflow.get_workflow_info()
-        
-        print(f"  ✅ 工作流引擎初始化成功")
-        print(f"     可用工作流: {len(info['available_workflows'])}個")
-        for wf_name in info['available_workflows']:
-            print(f"       - {wf_name}")
-        
-    except Exception as e:
-        print(f"  ❌ 工作流引擎測試失敗: {str(e)}")
-        all_passed = False
-    
-    # 8. 測試能力觸發器
+    print("  ⏭️ 跳過 (workflow_engine.py 已於 v5.2 移除；7 角色分析直接在 stock_analysis.py 內聯執行)")
+
+    # 8. 測試能力觸發器（v5.2: trigger.py 已刪除，標記為 DEPRECATED）
     print("\n【8. 能力觸發器測試】")
-    try:
-        from trigger import StockCapabilityTrigger
-        
-        trigger = StockCapabilityTrigger()
-        caps = trigger._identify_capabilities("分析騰訊0700.HK的技術面")
-        
-        print(f"  ✅ 能力觸發器初始化成功")
-        print(f"     識別能力: {caps[:5]}...")
-        
-    except Exception as e:
-        print(f"  ❌ 能力觸發器測試失敗: {str(e)}")
-        all_passed = False
+    print("  ⏭️ 跳過 (trigger.py 已於 v5.2 移除；能力觸發邏輯整合到 stock_router.py)")
     
     # 9. 測試GitHub整合
     print("\n【9. GitHub整合測試】")
