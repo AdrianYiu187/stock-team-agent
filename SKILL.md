@@ -1170,3 +1170,46 @@ dde0a54 fix(v5.14 P38 follow-up): dynamic pos_contribution base (meta-fix)
 - daily_vol=1.09%, annualized_vol=17.27%
 - |ret|/ann_vol=0.8157, log1p=0.5965
 - macro = 0.5 + 0.3×(-1)×0.5965 = 0.3211（vs fixture 0.323, diff 0.002 ✓）
+
+## v5.18 — Task A/B/C 驗證 + --region-neutral-macro 對沖旗標（P51, 2026-06-29）
+
+### Task A — US macro 0.463 真實驗證
+**SPY (^GSPC) 30d 真實**：ret=-1.96%, ann_vol=15.22%, |ret|/ann_vol=0.1289
+**公式驗算**：macro = 0.5 - 0.3×log1p(0.1289) = 0.4636（vs fixture 0.463, diff 0.0006 ✓）
+**結論**：**不是 +5%**，SPY 30d 實際小幅跌 -2%，公式完全合理
+
+### Task B — 3690.HK (Meituan) 真實業務分析
+| 指標 | 實際 | Fixture | 結論 |
+|------|------|---------|------|
+| forwardPE | **13.53** | 0 | placeholder 合理（trailingEPS=-4.52 虧損）|
+| ROE | **-24.09%** | -24% | ✓ 完全對 |
+| PEG | **28.72** | 28.72 | ✓ 完全對 |
+| targetPrice | 108.90 HKD vs current 64.25 | - | +69.5% upside |
+
+**結論**：fixture 3690.HK **不是 mock**，是真實數據。
+**下一步**：fixture 加 `forward_pe` 字段 13.53 更精確。
+
+### Task C — HK 偏賣對沖策略驗證（**已實作**）
+**新增 CLI 旗標**：`python3 scripts/cross_market_real_yfinance_e2e.py --region-neutral-macro`
+**邏輯**：啟用時把 macro_value 強制設為 0.5（中性化 macro）
+
+**對沖實測**：
+| Ticker | 原 Final | 對沖後 | 原 Majority | 對沖後 |
+|--------|---------|--------|------------|--------|
+| **0700.HK** | **0.4896** | **0.5107** | **sell** | **buy** ✓ |
+| 9988.HK | 0.4935 | 0.5142 | sell | buy ✓ |
+| 3690.HK | 0.4523 | 0.4696 | sell | sell（fund outlier）|
+| US 4 ticker | 0.51-0.53 | 0.51-0.53 | buy | buy（macro 0.463 接近中性）|
+
+**Region Δ 平均**：HK +0.020（macro 偏賣）/ US +0.004 / CN +0.002
+
+**結論**：
+1. 0700.HK/9988.HK 偏賣**完全是 macro 拖累** ✓
+2. 3690.HK 即使 macro 中性化仍 sell（fund_score 0.387 outlier：ROE -24% / PEG 28.72）
+3. 對沖旗標 = HK 偏賣的真實 attribution 工具
+4. 實戰不建議關 macro：macro 是真實 macro 環境的反映
+
+### v5.18 累計
+- **317 pytest passed**（0 regression）
+- 1 file changed, 15 insertions, 1 deletion
+- commit `5e53724`
