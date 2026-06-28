@@ -184,9 +184,13 @@ def compute_scores(
 
 
 def compute_scores_dynamic(
-    v513_mod, v514_mod, inputs: list[dict], ticker: str = "AAPL"
+    v513_mod, v514_mod, inputs: list[dict], ticker: str = "AAPL",
+    sentiment_value: float = 0.5, macro_value: float = 0.5,
 ) -> tuple[list[float], list[float], list[float], list[float]]:
-    """v5.15 P48: 用真實 weighted_score_with_variance_penalty + dynamic_weights_for_ticker。
+    """v5.15 P48 + v5.16 P49: 用真實 weighted_score_with_variance_penalty + dynamic_weights_for_ticker。
+
+    v5.16 P49: sentiment_value / macro_value 可從 fixtures 傳入真實值
+    （預設 0.5 中性基線，向後相容）。
 
     回傳：
         scores_v513, scores_v514: final score（含 variance penalty）
@@ -264,14 +268,14 @@ def compute_scores_dynamic(
         )
 
         # weighted_score_with_variance_penalty 需要 7 role dict
-        # sentiment 與 macro 用各 0.5（中性基線，因為 realistic_inputs 沒造 sentiment/macro）
+        # v5.16 P49: sentiment 與 macro 用傳入的真實值（從 fixtures 派生）或 0.5 中性基線
         scores14 = {
             "market": m14, "technical": t14, "fundamental": f14,
-            "risk": r14, "sentiment": 0.5, "news": n14, "macro": 0.5,
+            "risk": r14, "sentiment": sentiment_value, "news": n14, "macro": macro_value,
         }
         scores13 = {
             "market": m13, "technical": t13, "fundamental": f13,
-            "risk": r13, "sentiment": 0.5, "news": n13, "macro": 0.5,
+            "risk": r13, "sentiment": sentiment_value, "news": n13, "macro": macro_value,
         }
 
         # v5.14 與 v5.13 都用 v5.14 的 weights（因為 v5.12 P35 已引入 weights）
@@ -362,6 +366,10 @@ def main() -> int:
         help="ticker（決定 region 用於 dynamic weights：US/HK/CN，default AAPL）",
     )
     parser.add_argument(
+        "--use-real-sentiment-macro", action="store_true",
+        help="v5.16 P49: 從 cross_market fixtures 讀真實 sentiment + macro 派生值（取代中性 0.5）",
+    )
+    parser.add_argument(
         "--json", action="store_true",
         help="Output JSON only",
     )
@@ -374,9 +382,28 @@ def main() -> int:
     print("⚙️  生成 realistic inputs...")
     inputs = generate_realistic_inputs(n=args.n, seed=args.seed)
 
+    # v5.16 P49: 從 fixtures 派生真實 sentiment + macro（如果啟用）
+    sentiment_value, macro_value = 0.5, 0.5
+    if args.use_real_sentiment_macro:
+        try:
+            from cross_market_real_yfinance_e2e import FIXTURES_PATH
+            fixtures = json.loads(FIXTURES_PATH.read_text(encoding="utf-8"))
+            sent = fixtures.get("sentiment_per_ticker", {}).get(args.ticker)
+            macro = fixtures.get("macro_per_ticker", {}).get(args.ticker)
+            if sent:
+                sentiment_value = sent["combined_score"] * 0.5 + 0.5  # [-1,1] → [0,1]
+            if macro:
+                macro_value = macro["macro_score"]
+            print(f"🔬 真實 sentiment/macro 派生：sentiment={sentiment_value:.4f}, macro={macro_value:.4f}")
+        except Exception as e:  # noqa: BLE001
+            print(f"⚠️  載入 fixtures 失敗，使用中性基線：{e}")
+
     print(f"🔬 跑 v5.13 vs v5.14 算 total score...")
     if args.weights == "dynamic":
-        s13, s14, _, std14 = compute_scores_dynamic(v513, v514, inputs, ticker=args.ticker)
+        s13, s14, _, std14 = compute_scores_dynamic(
+            v513, v514, inputs, ticker=args.ticker,
+            sentiment_value=sentiment_value, macro_value=macro_value,
+        )
         quant = quantize_score_distribution(s13, s14, std_v514=std14)
     else:
         s13, s14 = compute_scores(v513, v514, inputs)
