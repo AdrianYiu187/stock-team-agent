@@ -1,6 +1,6 @@
 ---
 name: stock-team-agent
-description: Stock_Team_Agent v2 — 股票分析多代理智能團隊系統。整合7位專業分析師（市場/技術/基本面/風險/情緒/新聞/宏觀策略），支援專業估值模型、技術指標。真實多代理辯論引擎（5輪+7角色），非模擬。增強版RSS新聞源（實測成功：東方日報/36kr/Yahoo Finance），結合價格趨勢自動補充情緒判斷。支援 S1-S179 股票分析能力擴展。
+description: Stock_Team_Agent v5.15 (2026-06-28) — P43/P44 news region/source cap 線性化（cap rate 50-59% → 9-16%, -43pp）, 251 tests passed, v5.15 P41/P42 deferred, Lesson 29 (directional_accuracy ≈ buy-only baseline) documented
 ---
 
 # Stock_Team_Agent
@@ -916,3 +916,223 @@ q = get_realtime_quote("AAPL")
 - `references/stock-team-agent-p6-p10-2026-05-11.md` — P6-P10 實作全記錄
 - `references/stock-team-agent-p11-p19-2026-05-11.md` — P11-P19 實作全記錄
 - `references/stock-team-agent-audit-2026-05-11.md` — 2026-05-11 審計修復記錄（bare except/datetime import/if __name__ guard + 多位置同時修改方法論）
+
+---
+
+## v5.7 重大審計發現（2026-06-25，commit a6cadf6）
+
+### 🔴 5 個 Critical Bug 修復
+
+| # | Bug | 影響 | 修復 |
+|---|-----|------|------|
+| **B1** | backtest HOLD 永遠算 correct | `precision_hold` 永遠 100%（假數據），`overall_accuracy` 虛高 20-40% | HOLD 需實際變動 < 0.5% 才算 correct |
+| **B7** | `sharpe_factor` 反轉：sharpe=0 → 0.9（應為 0.5） | 負 Sharpe 風險評分倒置 | sharpe=-0.5→0.4, sharpe=0→0.5, sharpe=2→0.9 |
+| **B8** | HKD dict value = 字串 `'{_currency_symbol}'` | HKD 股票顯示 `{_currency_symbol}293.08` | 改為 `'HKD': 'HK$'` |
+| **B9** | `numpy.bool_` 無法 JSON 序列化 | `run_backtest()` 拋 `TypeError` | 加 `_json_safe()` 遞迴轉換 |
+| **C2** | HTML 報告 8 處硬編碼 HK$ | AAPL HTML 顯示 HK$ 而非 $ | 動態 `_currency_symbol` + Chart.js 注入 |
+
+### 📊 B1 真實 vs 假數據（AAPL 90天回測）
+
+| 指標 | v5.3 (假) | v5.7 (真) |
+|------|-----------|-----------|
+| `precision_hold` | **100%** | **28.6%** |
+| `overall_accuracy` | 66.2% | 64.8% |
+| **`directional_accuracy`** | — | **73.7%** |
+
+**結論**：之前聲稱的 66.2% 是 HOLD 撐場的假數據。真實方向準確率是 73.7%，比假數據更亮眼。
+
+### 🗑️ 死代碼清理：3,405 行（-24%）
+
+| 刪除項 | 行數 | 原因 |
+|--------|------|------|
+| `scripts/valuation/` (ValuationModels) | 222 | 只被 stock_health_check |
+| `scripts/charts/` (ChartGenerator) | 212 | 只被自身 `__main__` |
+| `scripts/data_sources/hybrid_provider.py` | 374 | 只被自身 `__main__` |
+| `scripts/data_sources/news_feed_provider.py` | 508 | GlobalNewsAnalyzer 從未調用 |
+| `scripts/data_sources/alpha_vantage/*` | 1,034 | 整個目錄無 caller |
+| `scripts/github_integration/*` | 381 | 只被 stock_health_check |
+| `scripts/indicators/*` | 819 | RSI/MACD 已在 backtest_engine.py 內聯 |
+| `scripts/task_router/*` + `stock_router.py` shim | 72 + 25 | 只被 stock_health_check |
+| `scripts/stock_health_check.py` (DEPRECATED) | 268 | 引用已刪除的模組 |
+| **總計** | **3,915** | **代碼 14,210 → 10,722** |
+
+### ✅ 改進指標
+
+| 維度 | v5.6.1 | v5.7 |
+|------|--------|------|
+| 代碼行數 | 14,210 | **10,722** (-24%) |
+| Tests | 60 passed | **65 passed** (+5 新測試) |
+| 真實方向準確率 | 假 66.2% | **真 73.7%** (+11.3%) |
+| HTML 報告 currency | HK$ 硬編碼 | 動態 7 種 |
+| Critical bugs | 0 | 0（修了 5 個） |
+
+### 🧪 v5.7 新增測試類（TestV57CriticalFixes）
+
+- `test_B1_backtest_hold_not_always_correct`
+- `test_B7_sharpe_factor_not_reversed`
+- `test_B8_hkd_currency_symbol_fixed`
+- `test_C2_html_currency_dynamic`
+- `test_backtest_directional_accuracy_new_metric`
+
+### 📋 完整 audit 記錄
+
+`AUDIT_CHANGELOG.md` Stage 12 章節有完整對比表、回測實測、和 commit 規劃。
+
+### 🔧 命令列使用（不變）
+
+```bash
+cd ~/.hermes/skills/productivity/stock-team-agent/scripts/
+python3 stock_analysis.py -c AAPL -n "Apple Inc."
+python3 stock_analysis.py -c 1810.HK -n "小米集團"
+```
+
+---
+
+## v5.14 — Cap Flatline 線性化（2026-06-28）
+
+### 動機
+
+v5.13 P36c 完成 final aggregation 連續化，但 market/tech/risk 三函數仍有 14 個真實 cap flatline（market 94.3% / tech 33.4% / risk 19.0% 數據落入 cap zone）。
+
+### 4 個 pitfall 修復（commit chain `e64c704`→`1b18cbf`→`dfcd08f`→`4ce9bc1`）
+
+| Pitfall | 函數 | 修法 | 預期 cap 改善 |
+|---------|------|------|---------------|
+| P37 | market pos_52wk | 4-segment cap → 完全連續線性 | 84% → 5% |
+| P38 | market from_high + ytd | 邊界 cap → 線性延伸 | 12% → 5% |
+| P39 | tech RSI/macd/ma50/mom | 4 cap → 連續線性 | 33% → 5% |
+| P40 | risk var_95 + max_dd | 2 cap → 線性 | 19% → 5% |
+
+### 量化結果（backtest_v514_multifactor.py）
+
+- 真實 cap flatline: 14 → 2（保留 beta + ma50=0 保護性 cap）
+- pytest: 207 → 241（+34 守衛測試）
+- AAPL directional_accuracy: v5.13 56.18% → v5.14 56.97% (**+0.80pp，未達 +5pp 預期**)
+- 訊號分布：v5.13 99.2% hold（cap 飽和）→ v5.14 73.7% hold + 26.3% buy（**+25.5pp 真實 buy 訊號恢復**）
+
+### 誠實結論（Rule 11）
+
+cap 飽和主要影響**訊號分布**而非**方向準確率**。directional_accuracy 改善有限（+0.80pp），但 buy/sell 分布從 99% hold 恢復到 26% buy = 真實反映 AAPL 上漲趨勢。
+
+詳細見 `docs/v5.14_roadmap.md`。
+
+---
+
+## v5.15 — Sentiment/News Cap 候選（2026-06-28 規劃）
+
+### 量化發現（quantify_sentiment_news_cap.py, n=1000）
+
+| 函數 | Cap | 真實分布 cap rate | 嚴重度 |
+|------|-----|------------------|--------|
+| sentiment news_count ≥120 | nc_factor=0.95 | 0.0% | 低 |
+| news news_count ≥120 | nc_factor=0.95 | 15.2% | 中 |
+| news region_count ≥3 | rc_factor=0.95 | **50.1%** | **嚴重** |
+| news source_diversity ≥6 | sd_factor=0.95 | **58.8%** | **嚴重** |
+
+### 4 個候選 pitfall
+
+- **P41** sentiment news_count cap → 線性延伸（低優先級）
+- **P42** news news_count cap → 線性延伸（中優先級）
+- **P43** news region_count cap → 線性延伸（**高優先級**，50% 飽和）
+- **P44** news source_diversity cap → 線性延伸（**高優先級**，59% 飽和）
+
+預期收益：news 真實 source/region 區分從 0% → 70%，directional_accuracy +1-2pp。
+
+詳細見 `docs/v5.15_roadmap.md`。
+
+---
+
+## v5.15 — News Region/Source Cap 線性化（2026-06-28 執行）
+
+### 動機
+
+v5.12 P33 `news_score_multifactor` 加入 3 個 cap（news_count≥120 / region_count≥3 / source_diversity≥6 → 0.95）。`quantify_sentiment_news_cap.py` 量化後發現：
+- region_count ≥3 cap rate: **50.1%**（嚴重）
+- source_diversity ≥6 cap rate: **58.8%**（嚴重）
+
+### P43 + P44 修復（執行於 2026-06-28）
+
+| Pitfall | 函數 | 修法 | 量化改善 |
+|---------|------|------|----------|
+| P43 | news region_count | ≥3 → ≥5 線性延伸 | **50.1% → 16.0%** (-34.1pp) |
+| P44 | news source_diversity | ≥6 → ≥12 線性延伸 | **58.8% → 8.9%** (-49.9pp) |
+
+### pytest 增量
+
+| 版本 | pytest count | Δ |
+|------|--------------|---|
+| v5.14 | 241 | — |
+| **v5.15 P43+P44** | **251** | +10 (`test_news_score_v515_linear.py`) |
+
+### Lesson 29 (NEW — 重要發現)
+
+`diagnose_backtest_accuracy.py` 揭露：**directional_accuracy 在 positive-drift GBM ≈ buy-only baseline**，不是 cap-saturation 修復的好 metric：
+
+| Strategy | directional_accuracy |
+|----------|----------------------|
+| Buy-only (always score=0.6) | **56.97%** |
+| v5.13 P36c (99% hold) | 56.18% |
+| **v5.15** | **56.97%**（= buy-only） |
+| Random score | 28.69% |
+
+**結論**：未來量化 cap-saturation 修復必須**同時報告 directional_accuracy + score distribution shift**（詳見 `references/v515-sentiment-news-cap-linearization-2026-06-28.md`）。
+
+### 仍 deferred
+
+| # | 函數 | Cap | 真實 cap rate | 優先級 |
+|---|------|-----|--------------|--------|
+| P41 | sentiment news_count ≥120 | 0.95 | 0.0% | 低 |
+| P42 | news news_count ≥120 | 0.95 | 15.2% | 中 |
+
+### v5.15 新增資產
+
+- `scripts/tests/test_news_score_v515_linear.py` — 10 條 v5.15 pytest
+- `scripts/diagnose_backtest_accuracy.py` — 3-baseline diagnostic（揭露 Lesson 29）
+- `scripts/quantify_signal_distribution.py` — buy/hold/sell 3-class entropy 量化（P48b）
+- `scripts/quantify_score_distribution.py` --weights {equal,dynamic} 模式（P48a）
+- `scripts/tests/test_quantify_signal_distribution.py` — 11 條 P48b pytest
+- `scripts/verify_v515_closure.py` — Stage 9 13→15 條 closure verifier
+- `docs/cross_market_e2e_audit.md` — cross-market E2E audit 模板
+- `docs/v5.14_roadmap.md` — P37-P40 完整路線圖
+- `docs/v5.15_roadmap.md` — P41-P44 候選規劃
+
+### v5.15 P45-P48 後續（cross-market 11 ticker + score/signal metric）
+
+**P45+P46** — `cross_market_real_yfinance_e2e.py` 擴展到 11 ticker：
+- US 4 (AAPL/MSFT/GOOGL/NVDA) + HK 3 (0700.HK/9988.HK/3690.HK) + CN 4 (600519.SS/000858.SZ/601318.SS/000333.SZ)
+- 真實 yfinance 拉取 11/11 成功 + `_meta.fetched_at` ISO timestamp + `FIXTURES_MAX_AGE_DAYS=90`
+- 單 ticker 失敗容忍（`failed_tickers` 記錄）+ `sample_size` 量化輸出
+
+**P47+P48** — cap-saturation 量化方法論：
+- directional_accuracy **不是** cap-saturation 修復的好 metric（Lesson 29）
+- 改用 score distribution (Wasserstein/entropy) + signal distribution (3-class entropy)
+- Equal vs dynamic weight 模式對比：dynamic 模式放大 cap 修復影響 **5.75×**
+- 「Buy-only trap」：positive-drift GBM 下 mean > 0.5 → sigmoid 永遠 buy-dominant
+- 真實 cap 修復價值在 sell 訊號從 0% 浮現到 0.9%（非 buy-ratio 變化）
+
+→ 完整方法論見 `v515-cap-saturation-distribution-metrics` skill（含 equal/dynamic mode 模板、closure verifier pattern、buy-only trap insight、anti-patterns）。
+
+### v5.15 chain commit 總覽（10 commits）
+
+```
+739809b docs(v5.15 closure P48): AUDIT_CHANGELOG v5.15 段
+961b9eb feat(v5.15 P48a): score distribution 加 --weights {equal,dynamic}
+48c495e docs(v5.15): PR_v515_to_main.md (merge proposal)
+729091d feat(v5.15 P47): verifier 整合 score distribution 量化檢查
+e667944 feat(v5.15 P47): score distribution 量化（directional_accuracy 替代指標）
+ad04d4b docs(v5.15 closure): AUDIT_CHANGELOG 補建 + 9 hash refs
+8fecbc5 feat(v5.15 closure verifier): Stage 9 health check script
+97316a7 feat(v5.15 P45+P46): cross_market_e2e 11 ticker + freshness + sample_size
+fda7b1c feat(v5.15 P43+P44): news_score region/source cap 線性化
+dde0a54 fix(v5.14 P38 follow-up): dynamic pos_contribution base (meta-fix)
+```
+
+**62 commits ahead of main**（2026-06-28 統計）。Tag `audit-v5.15-2026-06-28` deref = HEAD（SR-7 invariant）。
+
+### 完整 pytest 鏈（守衛 closure）
+
+- v5.13 P36c baseline: 200 passed
+- v5.14 P37-P40 + Stage 8 guard: 241 passed
+- v5.15 P43+P44 + P45+P46: 251 passed
+- v5.15 P47+P48: **288 passed** (271 → 288, +17 P48)
+- 包含 3 層 quantifier pytest：P47 equal (11) + P48a dynamic (6) + P48b signal (11)

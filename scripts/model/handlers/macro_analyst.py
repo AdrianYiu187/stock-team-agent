@@ -10,8 +10,10 @@ from datetime import datetime
 
 class MacroAnalyst:
     """宏觀策略分析師"""
-    
-    def __init__(self, data_provider):
+
+    def __init__(self, data_provider=None):
+        # v5.9: data_provider 為 legacy 簽名參數，主流程從未使用（內部直接 yfinance 抓 ^TNX/^VIX/GC=F/DX-Y）
+        # 保留以維持向後相容，可傳 None
         self.data_provider = data_provider
         self.name = "macro_analyst"
     

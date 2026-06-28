@@ -179,7 +179,15 @@ class AnalystTracker:
             rating_ids.append(rating_id)
         return rating_ids
 
-    def get_symbol_history(
+    # ========================================================================
+    # v5.10 (Stage 4.5b) DEPRECATED GETTERS — no caller in stock-team-agent
+    # ========================================================================
+    # 下列 11 個 methods 在 stock-team-agent 內 0 external caller (僅 CLI main() 使用)
+    # 若用戶手動跑 `python analyst_tracker.py --symbol AAPL --history` 等指令仍可用
+    # 若需移除，先確認 main() 是否仍被外部 cron/job 調用
+    # ========================================================================
+
+    def get_symbol_history(  # noqa: kept for CLI backward compat
         self,
         symbol: str,
         analyst: Optional[str] = None,

@@ -1,1 +1,0 @@
-from model.handlers.sentiment_analyst import SentimentAnalyst

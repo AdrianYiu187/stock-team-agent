@@ -23,8 +23,7 @@ from datetime import datetime
 
 GOOGLE_NEWS_RSS_EN = "https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en&num=20"
 GOOGLE_NEWS_RSS_ZH = "https://news.google.com/rss/search?q={ticker}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant&num=20"
-FINNHUB_NEWS_URL = "https://finnhub.io/api/v1/news?category=general&token={token}"
-FINNHUB_COMPANY_NEWS_URL = "https://finnhub.io/api/v1/news?category=company&symbol={ticker}&token={token}"
+# v5.10: Finnhub API 已停用（fetch_finnhub_news 0 caller），刪除未使用常數
 
 # 情緒關鍵詞字典（用於簡單的情緒分析）
 BULLISH_KEYWORDS = [
@@ -142,10 +141,10 @@ def fetch_google_news_sentiment(ticker: str) -> Dict[str, Any]:
     """
     抓取 Google News RSS 搜尋結果的情緒
     同時抓英文（全球）和中文（台/港）的新聞
-    
+
     Args:
         ticker: 股票代碼（例如：TSLA, 2330, 0700）
-    
+
     Returns:
         包含新聞情緒分析的字典
     """
@@ -160,9 +159,9 @@ def fetch_google_news_sentiment(ticker: str) -> Dict[str, Any]:
         "total_posts": 0,
         "error": None
     }
-    
+
     all_items = []
-    
+
     # 英文新聞（全球）
     en_url = GOOGLE_NEWS_RSS_EN.format(ticker=ticker)
     try:
@@ -173,9 +172,9 @@ def fetch_google_news_sentiment(ticker: str) -> Dict[str, Any]:
         print(f"   📰 Google News EN: 抓到 {len(items)} 條新聞")
     except Exception as e:
         print(f"   ⚠️ Google News EN 失敗: {e}")
-    
+
     time.sleep(0.3)
-    
+
     # 中文新聞（台/港）
     zh_url = GOOGLE_NEWS_RSS_ZH.format(ticker=ticker)
     try:
@@ -186,7 +185,7 @@ def fetch_google_news_sentiment(ticker: str) -> Dict[str, Any]:
         print(f"   📰 Google News ZH: 抓到 {len(items)} 條新聞")
     except Exception as e:
         print(f"   ⚠️ Google News ZH 失敗: {e}")
-    
+
     # 情緒分析
     sentiment_scores = []
     for item in all_items:
@@ -197,10 +196,10 @@ def fetch_google_news_sentiment(ticker: str) -> Dict[str, Any]:
         item["bullish"] = si["bullish"]
         item["bearish"] = si["bearish"]
         sentiment_scores.append(si["score"])
-    
+
     result["posts"] = all_items
     result["total_posts"] = len(all_items)
-    
+
     if sentiment_scores:
         avg = sum(sentiment_scores) / len(sentiment_scores)
         result["sentiment_score"] = int(avg)
@@ -210,72 +209,7 @@ def fetch_google_news_sentiment(ticker: str) -> Dict[str, Any]:
             result["aggregated_sentiment"] = "bearish"
         else:
             result["aggregated_sentiment"] = "neutral"
-    
-    return result
 
-
-# ============================================================================
-# Finnhub News 情緒分析函數（備用，需要 API Key）
-# ============================================================================
-
-def fetch_finnhub_news(ticker: str, token: str = "") -> Dict[str, Any]:
-    """
-    抓取 Finnhub 公司新聞
-    
-    Args:
-        ticker: 股票代碼（例如：AAPL）
-        token: Finnhub API Key
-    
-    Returns:
-        包含 Finnhub 新聞情緒的字典
-    """
-    ticker = ticker.upper()
-    result = {
-        "source": "finnhub",
-        "ticker": ticker,
-        "timestamp": datetime.now().isoformat(),
-        "posts": [],
-        "aggregated_sentiment": "neutral",
-        "sentiment_score": 0,
-        "total_posts": 0,
-        "error": None
-    }
-    
-    if not token or token == "YOUR_FINNHUB_TOKEN":
-        result["error"] = "No Finnhub token"
-        return result
-    
-    url = FINNHUB_COMPANY_NEWS_URL.format(ticker=ticker, token=token)
-    try:
-        resp = requests.get(url, timeout=REQUEST_TIMEOUT)
-        if resp.status_code == 401:
-            result["error"] = "Invalid Finnhub API key"
-            return result
-        resp.raise_for_status()
-        articles = resp.json()
-        
-        for article in articles[:20]:  # 最多20篇
-            headline = article.get("headline", "")
-            if not headline:
-                continue
-            si = _calculate_sentiment_score(headline)
-            result["posts"].append({
-                "headline": headline,
-                "source": article.get("source", ""),
-                "url": article.get("url", ""),
-                "datetime": article.get("datetime", ""),
-                "sentiment": si["sentiment"],
-                "sentiment_score": si["score"]
-            })
-        
-        result["total_posts"] = len(result["posts"])
-        if result["posts"]:
-            avg = sum(p["sentiment_score"] for p in result["posts"]) / len(result["posts"])
-            result["sentiment_score"] = int(avg)
-            result["aggregated_sentiment"] = "bullish" if avg > 10 else "bearish" if avg < -10 else "neutral"
-    except Exception as e:
-        result["error"] = str(e)
-    
     return result
 
 
@@ -306,35 +240,27 @@ def get_combined_social_sentiment(ticker: str, finnhub_token: str = "") -> Dict[
         }
     """
     ticker = ticker.upper()
-    
-    # Google News（主資料源）
+
+    # Google News（主資料源，v5.10: Finnhub 已移除）
     google_data = fetch_google_news_sentiment(ticker)
-    
-    # Finnhub（備用資料源）
-    finnhub_data = {"total_posts": 0, "sentiment_score": 0} if not finnhub_token else fetch_finnhub_news(ticker, finnhub_token)
-    
+    finnhub_data = {"total_posts": 0, "sentiment_score": 0}  # v5.10 stub
+
     # 計算合併分數
     sources_used = []
     total_score = 0
     total_weight = 0
-    
+
     if google_data["total_posts"] > 0:
         sources_used.append("google_news")
         weight = google_data["total_posts"]
         total_score += google_data["sentiment_score"] * weight
         total_weight += weight
-    
-    if finnhub_data.get("total_posts", 0) > 0:
-        sources_used.append("finnhub")
-        weight = finnhub_data["total_posts"]
-        total_score += finnhub_data["sentiment_score"] * weight
-        total_weight += weight
-    
+
     combined_score = int(total_score / total_weight) if total_weight > 0 else 0
     combined_sentiment = "bullish" if combined_score > 10 else "bearish" if combined_score < -10 else "neutral"
-    
+
     total_posts = google_data["total_posts"] + finnhub_data.get("total_posts", 0)
-    
+
     if total_posts > 0:
         summary = (
             f"{ticker} 在新聞中共有 {total_posts} 篇相關報導。"
@@ -343,7 +269,7 @@ def get_combined_social_sentiment(ticker: str, finnhub_token: str = "") -> Dict[
         )
     else:
         summary = f"無法取得 {ticker} 的新聞資料。"
-    
+
     return {
         "ticker": ticker,
         "timestamp": datetime.now().isoformat(),

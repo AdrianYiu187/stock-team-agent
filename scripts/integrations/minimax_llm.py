@@ -117,7 +117,9 @@ class MiniMaxLLM:
         
         return results
     
-    def analyze_sentiment(self, text: str) -> Dict[str, Any]:
+    # v5.10 (Stage 4.5b) DEPRECATED: analyze_sentiment 0 caller in stock-team-agent (50 lines)
+    # 保留以維持向後相容（外部腳本可能呼叫）
+    def analyze_sentiment(self, text: str) -> Dict[str, Any]:  # noqa: kept for backward compat
         """
         分析文本情緒
         
@@ -169,15 +171,15 @@ class MiniMaxLLM:
         return self._fallback_sentiment(text)
     
     def _fallback_sentiment(self, text: str) -> Dict[str, Any]:
-        """關鍵詞回退機制（當MiniMax API不可用時）"""
+        """關鍵詞回退機制（當MiniMax API不可用時）— DEPRECATED (v5.10, 0 caller in stock-team-agent)"""
         positive_keywords = ["上漲", "增長", "超預期", "利好", "突破", "買入", "強勁", "大漲", "飙升", "盈利", "增持", "推薦"]
         negative_keywords = ["下跌", "暴跌", "虧損", "降級", "利空", "風險", "裁員", "倒閉", "破產", "訴訟", "裁員", "警告"]
-        
+
         pos_count = sum(1 for kw in positive_keywords if kw in text)
         neg_count = sum(1 for kw in negative_keywords if kw in text)
-        
+
         score = (pos_count - neg_count) / max(pos_count + neg_count, 1)
-        
+
         return {
             "sentiment": "positive" if score > 0.2 else "negative" if score < -0.2 else "neutral",
             "score": score,
@@ -185,8 +187,10 @@ class MiniMaxLLM:
             "reasoning": "使用關鍵詞回退機制（MiniMax API不可用）",
             "⚠️ FALLBACK_KEYWORD": True
         }
-    
-    def analyze_stock_news(self, title: str, description: str = "", symbol: str = "") -> Dict[str, Any]:
+
+    # v5.10 (Stage 4.5b) DEPRECATED: analyze_stock_news 0 caller in stock-team-agent (40+ lines)
+    # 保留以維持向後相容（外部腳本可能呼叫）
+    def analyze_stock_news(self, title: str, description: str = "", symbol: str = "") -> Dict[str, Any]:  # noqa: kept for backward compat
         """
         分析股票新聞的影響
         

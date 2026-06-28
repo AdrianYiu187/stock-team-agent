@@ -328,13 +328,18 @@ def _build_kpi_deck(data):
     rec    = data.get("recommendation", "HOLD")
     pos52  = ((price - w52l) / (w52h - w52l) * 100) if w52h > w52l else 50
 
+    # v5.8: 委派給 stock_analysis.currency_symbol() 純函數（dedup 兩處硬編碼字典）
+    from stock_analysis import currency_symbol as _currency_symbol_fn
+    _currency = data.get("currency", "USD")
+    _currency_symbol = _currency_symbol_fn(_currency)
+
     kpis = ""
 
     # Price
     ytd_cls = "text-emerald-600" if ytd >= 0 else "text-red-600"
     ytd_badge = "bg-emerald-50 text-emerald-700 border border-emerald-200" if ytd >= 0 else "bg-red-50 text-red-700 border border-red-200"
     kpis += _kpi_card(
-        "目前股價", f"HK${_f(price)}",
+        "目前股價", f"{_currency_symbol}{_f(price)}",
         f"YTD {_pct(ytd)} | 52W區間 {_f(pos52,'.0f')}%",
         _pct(ytd), ytd_cls,
         _pct(ytd), ytd_badge
@@ -355,7 +360,7 @@ def _build_kpi_deck(data):
     from_h = _pct((w52h-price)/w52h*100) if w52h else "N/A"
     kpis += _kpi_card(
         "52W 區間位置", f"{_f(pos52,'.0f')}%",
-        f"高點 HK${_f(w52h)} | 低點 HK${_f(w52l)}",
+        f"高點 {_currency_symbol}{_f(w52h)} | 低點 {_currency_symbol}{_f(w52l)}",
         pos_lbl, pos_cls, f"距高點 -{from_h}", pos_badge
     )
     # RSI
@@ -432,6 +437,11 @@ def _build_visual_insights(data, analysts):
     mdd     = abs(float(data.get("max_drawdown", 0)))
     sharpe  = float(data.get("sharpe", 0))
 
+    # v5.8: 委派給 stock_analysis.currency_symbol() 純函數（dedup 第 2 處）
+    from stock_analysis import currency_symbol as _currency_symbol_fn
+    _currency = data.get("currency", "USD")
+    _currency_symbol = _currency_symbol_fn(_currency)
+
     r_labels = [_analyst_name(r) for r in analysts.keys()]
     r_scores = [float(v.get("score", 0))*100 for v in analysts.values()]
     r_colors = ANALYST_COLORS[:len(analysts)]
@@ -490,7 +500,7 @@ def _build_visual_insights(data, analysts):
         "data:{"
         "labels:lbls,"
         "datasets:[{"
-        "label:'收盤價 (HK$)',"
+        "label:'收盤價 ("+_currency_symbol+")',"
         "data:closes.map(function(c,i){return c?{x:i,y:c}:null;}).filter(Boolean),"
         "borderColor:'#2563EB',backgroundColor:'rgba(37,99,235,0.06)',"
         "fill:true,tension:0.3,pointRadius:2,pointHoverRadius:5,borderWidth:2"
@@ -501,14 +511,14 @@ def _build_visual_insights(data, analysts):
         "interaction:{mode:'index',intersect:false},"
         "scales:{"
         "x:{display:false},"
-        "y:{ticks:{callback:function(v){return'HK$'+v.toFixed(0);},color:'#8A8A8A',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}}"
+        "y:{ticks:{callback:function(v){return'"+_currency_symbol+"'+v.toFixed(0);},color:'#8A8A8A',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}}"
         "},"
         "plugins:{"
         "legend:{display:false},"
         "tooltip:{"
         "callbacks:{"
-        "label:function(ctx){return'HK$'+ctx.raw.y.toFixed(2);},"
-        "afterLabel:function(ctx){var i=ctx.raw.x;return'O:HK$'+(opens[i]||0).toFixed(2)+' H:HK$'+(highs[i]||0).toFixed(2)+' L:HK$'+(lows[i]||0).toFixed(2);}"
+        "label:function(ctx){return'"+_currency_symbol+"'+ctx.raw.y.toFixed(2);},"
+        "afterLabel:function(ctx){var i=ctx.raw.x;return'O:"+_currency_symbol+"'+(opens[i]||0).toFixed(2)+' H:"+_currency_symbol+"'+(highs[i]||0).toFixed(2)+' L:"+_currency_symbol+"'+(lows[i]||0).toFixed(2);}"
         "}"
         "}"
         "}"
@@ -567,19 +577,19 @@ def _build_visual_insights(data, analysts):
         "options:{"
         "responsive:true,maintainAspectRatio:false,"
         "scales:{"
-        "y:{beginAtZero:false,ticks:{callback:function(v){return'HK$'+v.toFixed(0);},color:'#8A8A8A',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},"
+        "y:{beginAtZero:false,ticks:{callback:function(v){return'"+_currency_symbol+"'+v.toFixed(0);},color:'#8A8A8A',font:{size:10}},grid:{color:'rgba(0,0,0,0.04)'}},"
         "x:{ticks:{color:'#8A8A8A',font:{size:10}},grid:{display:false}}"
         "},"
         "plugins:{"
         "legend:{position:'bottom',labels:{font:{size:11},color:'#1A1A1A'}},"
         "tooltip:{"
         "callbacks:{"
-        "label:function(ctx){return ctx.dataset.label+': HK$'+ctx.raw.toFixed(2);},"
+        "label:function(ctx){return ctx.dataset.label+': "+_currency_symbol+"'+ctx.raw.toFixed(2);},"
         "afterLabel:function(ctx){"
         "if(ctx.datasetIndex===0&&ctx.dataIndex>0){"
         "var diff=ctx.raw-"+str(price)+";"
         "var pct=(diff/"+str(price)+"*100).toFixed(1);"
-        "return(diff>=0?'+':'')+'HK$'+Math.abs(diff).toFixed(1)+' ('+pct+'%)';"
+        "return(diff>=0?'+':'')+'"+_currency_symbol+"'+Math.abs(diff).toFixed(1)+' ('+pct+'%)';"
         "}return'';"
         "}"
         "}"

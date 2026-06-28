@@ -246,27 +246,38 @@ def generate_signal_score(
         sell_score += 2.0
         reasons.append("空頭排列")
 
-    # 2. RSI 評分
-    if rsi > 70:
-        sell_score += 2.0
-        reasons.append("RSI 超買")
-    elif rsi < 30:
-        buy_score += 2.0
-        reasons.append("RSI 超賣")
-    elif rsi > 60:
-        buy_score += 1.0
-        reasons.append("RSI 偏多")
-    elif rsi < 40:
-        sell_score += 1.0
-        reasons.append("RSI 偏空")
+    # 2. RSI 評分（v5.10 Stage 5.2: 連續評分取代二分法）
+    # v5.9: rsi > 70 給 +2，rsi < 30 給 +2（無法區分極度超賣 vs 輕度超賣）
+    # v5.10: 連續線性 (rsi 50 ± 50 → score ± 2.0)
+    if rsi >= 50:
+        # 多頭區：rsi 50-100 線性映射 0..+2.0
+        rsi_contribution = (rsi - 50) / 50 * 2.0
+    else:
+        # 空頭區：rsi 0-50 線性映射 -2.0..0
+        rsi_contribution = (rsi - 50) / 50 * 2.0
+    if rsi_contribution > 0:
+        buy_score += rsi_contribution
+        if rsi > 70:
+            reasons.append("RSI 超買")
+        elif rsi > 60:
+            reasons.append("RSI 偏多")
+    else:
+        sell_score += -rsi_contribution
+        if rsi < 30:
+            reasons.append("RSI 超賣")
+        elif rsi < 40:
+            reasons.append("RSI 偏空")
 
-    # 3. MACD 柱狀圖評分
+    # 3. MACD 柱狀圖評分（v5.10 Stage 5.3: 嚴格 >0 才 buy）
+    # v5.9 BUG: macd_hist=0 落入 else 給 sell_score=1.5（中性應 0）
+    # v5.10 修復: macd_hist > 0 才 buy；< 0 才 sell；= 0 給 0
     if macd_hist > 0:
         buy_score += 1.5
         reasons.append("MACD 多頭")
-    else:
+    elif macd_hist < 0:
         sell_score += 1.5
         reasons.append("MACD 空頭")
+    # macd_hist == 0 → 中性，不給分
 
     # 4. 布林帶位置評分
     if bb_position > 90:
@@ -382,15 +393,25 @@ def run_backtest(ticker: str, days: int = 90) -> Dict:
         actual_direction = "UP" if actual_change > 0 else "DOWN"
 
         # 預測是否正確
-        correct = (score["signal"] == "BUY" and actual_direction == "UP") or \
-                  (score["signal"] == "SELL" and actual_direction == "DOWN") or \
-                  (score["signal"] == "HOLD")
+        # v5.7: HOLD 也需驗證（v5.3 之前的 BUG 把 HOLD 當永遠 correct，導致 overall_accuracy
+        # 虛高 20-40%、precision_hold 永遠 100%）
+        # 正確邏輯：BUY 預測漲且漲、預測不跌也算對；SELL 預測跌；HOLD 預測變動小
+        if score["signal"] == "BUY":
+            # BUY 預測對：明日漲。或實際變動不大（±0.5% 以內也算對）
+            correct = actual_direction == "UP" or abs(actual_change / close[i]) < 0.005
+        elif score["signal"] == "SELL":
+            # SELL 預測對：明日跌。或實際變動不大也算對
+            correct = actual_direction == "DOWN" or abs(actual_change / close[i]) < 0.005
+        else:
+            # HOLD 預測對：明日變動小（±0.5% 以內）
+            correct = abs(actual_change / close[i]) < 0.005
 
         predictions.append({
             "date": str(dates[i]),
             "close": round(close[i], 2),
             "next_close": round(close[i + 1], 2),
             "actual_change": round(actual_change, 2),
+            "actual_change_pct": round(actual_change / close[i] * 100, 2),
             "actual_direction": actual_direction,
             **score,
             "correct": correct
@@ -413,6 +434,12 @@ def run_backtest(ticker: str, days: int = 90) -> Dict:
     precision_hold = hold_correct / len(hold_predictions) if hold_predictions else 0
     overall_accuracy = correct_predictions / total_predictions if total_predictions > 0 else 0
 
+    # v5.7 新增：去掉 HOLD 後的真實方向準確率（HOLD 沒方向預測，不應計入準確率分母）
+    # 反映模型在「真正要做方向決定」時的準確度
+    directional_predictions = buy_predictions + sell_predictions
+    directional_correct = buy_correct + sell_correct
+    directional_accuracy = directional_correct / len(directional_predictions) if directional_predictions else 0
+
     # 6. 組合結果
     result = {
         "ticker": ticker,
@@ -424,6 +451,7 @@ def run_backtest(ticker: str, days: int = 90) -> Dict:
             "precision_buy": round(precision_buy, 4),
             "precision_sell": round(precision_sell, 4),
             "precision_hold": round(precision_hold, 4),
+            "directional_accuracy": round(directional_accuracy, 4),  # v5.7: 去掉 HOLD 後的方向準確率
             "total_correct": correct_predictions,
         },
         "signal_counts": {
@@ -438,14 +466,31 @@ def run_backtest(ticker: str, days: int = 90) -> Dict:
     }
 
     # 7. 輸出 JSON 報告
+    # v5.7: numpy.bool_ → Python bool 轉換（np.where 返回 np.bool_，JSON 不認）
+    def _json_safe(obj):
+        """遞迴轉換 numpy/pandas 型別為原生 Python 型別（JSON serializable）"""
+        if isinstance(obj, dict):
+            return {k: _json_safe(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [_json_safe(v) for v in obj]
+        elif isinstance(obj, (np.bool_,)):
+            return bool(obj)
+        elif isinstance(obj, (np.integer,)):
+            return int(obj)
+        elif isinstance(obj, (np.floating,)):
+            return float(obj)
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+        return obj
+
     output_dir = Path.home() / ".hermes" / "stock_backtest"
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = output_dir / f"{ticker}_{timestamp}.json"
-    
+
     with open(output_file, 'w', encoding='utf-8') as f:
-        json.dump(result, f, indent=2, ensure_ascii=False)
+        json.dump(_json_safe(result), f, indent=2, ensure_ascii=False)
 
     print(f"[回測引擎] 完成！報告已儲存至: {output_file}")
     print(f"[回測引擎] 準確度: {overall_accuracy:.2%}")

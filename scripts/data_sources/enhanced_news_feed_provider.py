@@ -431,27 +431,6 @@ class EnhancedNewsFeedProvider:
                 self._llm = None
         return self._llm
     
-    def analyze_sentiment_llm(self, text: str) -> Dict[str, Any]:
-        """
-        使用 MiniMax LLM 分析情緒（增強版）
-        
-        返回:
-            {
-                "sentiment": "positive|negative|neutral",
-                "score": float,
-                "confidence": float,
-                "reasoning": str,
-                "⚠️ LLM_USED": True  # 標記使用LLM
-            }
-        """
-        if not self.llm:
-            # Fallback 到關鍵詞
-            return self._keyword_sentiment(text)
-        
-        result = self.llm.analyze_sentiment(text)
-        result["⚠️ LLM_USED"] = True
-        return result
-    
     def _keyword_sentiment(self, text: str) -> Dict[str, Any]:
         """關鍵詞情緒分析（當LLM不可用時的回退）"""
         positive_keywords = [
@@ -467,13 +446,13 @@ class EnhancedNewsFeedProvider:
             "裁員", "倒閉", "破產", "調查", "訴訟", "醜聞", "造假", "虧本",
             "大跳水", "暴跌", "失血", "拋售", "沽售", "減持", "目標價下調", "預警",
         ]
-        
+
         text_lower = text.lower()
         pos_count = sum(1 for kw in positive_keywords if kw.lower() in text_lower)
         neg_count = sum(1 for kw in negative_keywords if kw.lower() in text_lower)
-        
+
         score = (pos_count - neg_count) / max(pos_count + neg_count, 1)
-        
+
         return {
             "sentiment": "positive" if score > 0.2 else "negative" if score < -0.2 else "neutral",
             "score": score,
@@ -481,7 +460,7 @@ class EnhancedNewsFeedProvider:
             "reasoning": "關鍵詞回退機制（MiniMax LLM不可用）",
             "⚠️ FALLBACK_KEYWORD": True
         }
-    
+
     def get_market_sentiment(self, news: List[Dict]) -> Dict[str, Any]:
         """分析市場情緒（關鍵詞版本：快速穩定，避免LLM API掛起）"""
         if not news:
@@ -514,51 +493,6 @@ class EnhancedNewsFeedProvider:
             "total_count": total,
             "⚠️ LLM_USED": llm_used,
             "⚠️ FALLBACK_KEYWORD": not llm_used
-        }
-    
-    def analyze_stock_impact_llm(self, news: List[Dict], symbol: str) -> Dict[str, Any]:
-        """
-        使用 LLM 分析新聞對特定股票的影響（增強版）
-        """
-        if not self.llm:
-            return self.analyze_stock_impact(news, symbol)
-        
-        # 找出相關新聞
-        keywords = self.stock_keywords.get(symbol, [symbol])
-        relevant_news = []
-        for item in news:
-            text = (item.get("title", "") + item.get("description", "")).lower()
-            if any(kw.lower() in text for kw in keywords):
-                relevant_news.append(item)
-        
-        if not relevant_news:
-            return {
-                "symbol": symbol,
-                "relevant_news_count": 0,
-                "impact_score": 0,
-                "impact_label": "neutral",
-                "⚠️ LLM_USED": True,
-                "reasoning": "無相關新聞"
-            }
-        
-        # 使用LLM分析每條新聞
-        impact_scores = []
-        for item in relevant_news[:5]:
-            title = item.get("title", "")
-            desc = item.get("description", "")
-            result = self.llm.analyze_stock_news(title, desc, symbol)
-            if "impact_score" in result:
-                impact_scores.append(result["impact_score"])
-        
-        avg_impact = sum(impact_scores) / len(impact_scores) if impact_scores else 0
-        
-        return {
-            "symbol": symbol,
-            "relevant_news_count": len(relevant_news),
-            "impact_score": round(avg_impact, 3),
-            "impact_label": "positive" if avg_impact > 0.2 else "negative" if avg_impact < -0.2 else "neutral",
-            "relevant_news": relevant_news[:5],
-            "⚠️ LLM_USED": True
         }
 
 

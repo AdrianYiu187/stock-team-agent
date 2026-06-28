@@ -20,7 +20,9 @@ def calculate_rsi(prices: list, period: int = 14) -> float:
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def calculate_deviation(prices: list) -> float:
+# v5.10 (Stage 4.5): calculate_deviation 從未被 check_alerts 之外的 caller 使用 (0 external caller)
+# 保留以維持向後相容（外部腳本可能 import）
+def calculate_deviation(prices: list) -> float:  # noqa: kept for backward compat
     """計算 MA5/MA20 乖離率 (%)"""
     if len(prices) < 20:
         return 0.0

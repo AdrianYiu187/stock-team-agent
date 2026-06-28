@@ -1,3 +1,0 @@
-"""
-Charts module - plotting utilities
-"""

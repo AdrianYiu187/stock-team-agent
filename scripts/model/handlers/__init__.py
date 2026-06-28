@@ -1,24 +1,10 @@
 """
-Stock_Team_Agent Model Handlers
-================================
-The analyst implementations (model layer).
-Each analyst is a specialized role that provides domain-specific analysis.
+Stock_Team_Agent MacroAnalyst (model layer)
+==========================================
+v5.8: 6 個分析師 handler 已清理為死代碼（multifactor 純函數在 stock_analysis.py
+直接調用，不需 OO wrapper）。本文件保留 MacroAnalyst 唯一真實實現。
 """
 
-from .technical_analyst import TechnicalAnalyst
-from .fundamental_analyst import FundamentalAnalyst
-from .market_analyst import MarketAnalyst
-from .risk_analyst import RiskAnalyst
-from .sentiment_analyst import SentimentAnalyst
 from .macro_analyst import MacroAnalyst
-from .news_analyst import NewsAnalyst
 
-__all__ = [
-    "TechnicalAnalyst",
-    "FundamentalAnalyst",
-    "MarketAnalyst",
-    "RiskAnalyst",
-    "SentimentAnalyst",
-    "MacroAnalyst",
-    "NewsAnalyst",
-]
+__all__ = ["MacroAnalyst"]
