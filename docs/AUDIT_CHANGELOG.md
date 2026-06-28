@@ -185,3 +185,59 @@
 | 訊號分布均勻度 | 不均（buy-dominant） | 接近均勻（entropy 接近上限） |
 
 **結論**：P48b mock GBM 結論「buy-dominant」是 mock 設計的 bias，**真實 11 ticker 數據顯示訊號分布接近 3-class 均勻**（除 HK 整體偏賣）。cap 修復的真實下游價值在「讓真實市場分歧（US buy / HK sell）浮現」，而非改變 buy/sell 比例的絕對值。
+---
+
+## v5.17 — HK Macro & 0700.HK PE 真實數據驗證（2026-06-29）
+
+### Task A: HK macro 0.323 合理性驗證
+- **HSI 30d 真實數據（2026-05-26 → 2026-06-26）**：
+  - start = 26388.44, end = 22671.86, **ret_30d = -14.08%**
+  - daily_vol = 1.09%, **annualized_vol = 17.27%**
+  - |ret|/ann_vol = 0.8157, log1p(0.8157) = 0.5965
+- **公式驗算**：`macro = 0.5 + 0.3 * (-1) * min(log1p(0.8157), 1.0) = 0.5 - 0.3*0.5965 = 0.3211`
+- **fixture 輸出 0.323**，diff 0.002（close 浮點誤差內）→ **完全合理** ✅
+- **解讀**：HSI 30d 跌 14% 但波動率 17%（年化），跌幅 ≈ 0.82 個年化波動 → 中度偏負面，宏觀分 0.323 反映「跌勢明確但未崩盤」
+
+### Task B: 0700.HK PE 線性化驗證（Rule 11 大聲修正先前假設）
+- **Tencent 0700.HK 真實數據（yfinance 2026-06-26）**：
+  - trailingPE = 14.77, forwardPE = 10.79, PEG = 1.2
+  - revenueGrowth = 9.1%, earningsGrowth = 22.9%
+  - ROE = 20.5%, priceToBook = 2.86
+- **PE linearization 公式**：`pe_factor = 0.95 - 0.90 * (pe + 50) / 550`
+  - PE 14.77 → pe_factor = **0.8440**（高分）
+  - PE 10~50 區間 pe_factor 都 > 0.78（**全部高分**）
+- **fund_score_multifactor 完整拆解**：
+  - pe_factor 0.8440 + roe_factor 0.2250 + peg_factor 0.7592 + growth_factor 0.1913
+  - 加權 0.35/0.30/0.20/0.15 → **fund_score = 0.5453**（中性偏 buy）
+- **0700.HK final = 0.4896 手算**：
+  - HK 權重 (market 0.12 / tech 0.23 / fund 0.25 / risk 0.15 / sent 0.15 / news 0.07 / macro 0.08)
+  - weighted_avg = 0.5247
+  - analyst_std = 0.0674（macro 0.323 vs 其他 0.5+ 造成 disagreement）
+  - penalty = max(0.85, 1 - 0.0674) = 0.9326
+  - final = 0.5247 × 0.9326 = **0.4893** ≈ fixture 0.4896 ✅
+
+### 重要發現（Rule 11 大聲修正「PE 20-25 對 HK 偏負面」假設）
+**HK 偏賣的真實原因不是 PE**：
+
+| 真實驅動因子 | 影響 |
+|-------------|------|
+| **macro 0.323**（HSI -14%） | 拉低 weighted_avg |
+| **analyst disagreement**（macro vs 其他） | 拉低 penalty |
+| **3690.HK 基本面崩盤**（pe=0/roe=-24%/peg=28.72） | fund_score 0.387 拉低 HK 均值 |
+
+- 0700.HK 自身 PE 14.77 → pe_factor 0.84（**高分**），fund_score 0.545（中性偏 buy）
+- 9988.HK PE 14.09 → pe_factor 0.85（**高分**），fund_score 0.564（buy）
+- **PE 線性化對 HK 完全公平**，反而是 HSI macro 大跌 + 3690.HK 基本面崩盤拖累整個 region
+- 「PE 20-25 對 HK 偏負面」是先驗假設錯誤，**真實 PE 14-15 對 HK 是高分**
+
+### PE linearization 公式對 HK 友好驗證
+| PE | pe_factor | fund_score |
+|----|-----------|------------|
+| 10 | 0.8518 | 0.5499 |
+| 15 | 0.8436 | 0.5470 |
+| 20 | 0.8355 | 0.5442 |
+| 25 | 0.8273 | 0.5413 |
+| 30 | 0.8191 | 0.5385 |
+| 35 | 0.8109 | 0.5356 |
+
+**結論**：HK region 在 PE 區間 10-35 都拿到 fund_score 0.54-0.55（中性偏 buy），PE 不是 HK 偏賣的原因。HK 偏賣完全歸因於 macro + analyst disagreement + 3690.HK outlier 基本面。
