@@ -171,6 +171,7 @@ def compute_signal_distribution_per_ticker(
     ticker: str,
     sentiment: Optional[dict] = None,
     macro: Optional[dict] = None,
+    region_neutral_macro: bool = False,
 ) -> dict:
     """v5.16 P50 — Per-ticker signal distribution 量化（buy/hold/sell + entropy）。
 
@@ -224,8 +225,10 @@ def compute_signal_distribution_per_ticker(
         except Exception:  # noqa: BLE001
             sentiment_score = 0.5 + 0.5 * s.get("combined_score", 0)
 
-    # 3. macro（如果有）
+    # 3. macro（如果有）— v5.18: region_neutral_macro 對沖旗標
     macro_value = macro.get(ticker, {}).get("macro_score", 0.5) if macro else 0.5
+    if region_neutral_macro:
+        macro_value = 0.5  # 中性化 macro（驗證 region-level macro 拖累效應）
 
     # 4. weighted_score_with_variance_penalty（如果有 weights）
     weights = v514_mod.dynamic_weights_for_ticker(ticker)
@@ -285,6 +288,14 @@ def compute_signal_distribution_per_ticker(
 
 
 def main() -> int:
+    import argparse
+    parser = argparse.ArgumentParser(description="v5.16 cross_market e2e + per-ticker signal")
+    parser.add_argument(
+        "--region-neutral-macro", action="store_true",
+        help="v5.18: 把所有 ticker macro 強制設為 0.5（驗證 region-level macro 拖累效應）",
+    )
+    args = parser.parse_args()
+
     _ensure_v510_baseline()
 
     v510_mod = _load_module("v510_stock_analysis", V510_PATH)
@@ -336,6 +347,8 @@ def main() -> int:
 
     print(f"\n{'='*60}")
     print(f"📊 v5.16 P50 Signal Distribution Per Ticker ({len(fundamentals)} markets)")
+    if args.region_neutral_macro:
+        print(f"⚙️  --region-neutral-macro: macro 全部中性化為 0.5")
     print(f"{'='*60}")
     print(f"{'Ticker':<14} {'Final':>7} {'Buy%':>7} {'Hold%':>7} {'Sell%':>7} {'Entropy':>9} {'Majority':>10}")
     signal_distribution_per_ticker = {}
@@ -343,6 +356,7 @@ def main() -> int:
         sig = compute_signal_distribution_per_ticker(
             v511_mod, fundamentals, t,
             sentiment=sentiment_dict, macro=macro_dict,
+            region_neutral_macro=args.region_neutral_macro,
         )
         signal_distribution_per_ticker[t] = sig
         if "error" in sig:
