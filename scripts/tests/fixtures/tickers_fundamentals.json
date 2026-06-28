@@ -306,7 +306,7 @@
     "source": "yfinance real fetch (v5.16 P50 with signal distribution)",
     "v510_baseline": "0f30069:scripts/stock_analysis.py",
     "v5113_source": "scripts/stock_analysis.py (HEAD)",
-    "fetched_at": "2026-06-28T16:40:48.699801+00:00",
+    "fetched_at": "2026-06-28T16:57:25.900514+00:00",
     "ticker_universe_size": 11,
     "failed_tickers": [],
     "max_age_days": 90
