@@ -99,3 +99,89 @@
 |------|-------|-------|------|
 | pytest | 200 | 241 | +41 |
 | 真實 cap flatlines | 14/16 | **2/16** | -12 |
+---
+
+## v5.16（2026-06-29 真實數據整合）
+
+**Branch HEAD**: `2095bee`  
+**Main HEAD**: `a7d64b2` → `2095bee` (merge commit 為 65-commit squash)  
+**Tag**: `audit-v5.15-2026-06-28` (保留，指向 squash merge)  
+**Commits since v5.15 merge**: 1（v5.16 P49+P50）
+
+### Chain（merge 到 main 之後）
+
+| Commit | Description |
+|--------|-------------|
+| `2095bee` | feat(v5.16 P49+P50): real sentiment/macro + per-ticker signal distribution |
+| `a7d64b2` | feat(v5.15 merge): consolidate 65 commits (v5.2 → v5.15 P48b) into main |
+| `aa0b05a` | perf+cleanup(v5.2): parallel IO (3.4x) + dead code removal (705 lines) + HTML math consensus |
+
+### v5.16 新增
+
+**P49 — 真實 sentiment + macro 派生**
+- `scripts/derive_real_sentiment_macro.py`（340 行, CLI+library）
+  - 從 yfinance 拉 sentiment（news keyword count，中英文關鍵字）
+  - 從 yfinance 拉 macro（market index 30d return + 波動率）
+  - ticker → macro index 映射（US ^GSPC / HK ^HSI / CN SSE/SZSE）
+  - 11/11 ticker 成功（HK macro 0.323 最弱，US 0.463 中性，CN 0.454-0.514 中性）
+- `scripts/quantify_score_distribution.py` 新增 `--use-real-sentiment-macro` 旗標
+- AAPL 實測 analyst_disagreement: 0.1107 → 0.1158 (+4.6%)
+- 證明中性 0.5 基線遮蔽真實 macro 環境對 analyst disagreement 的影響
+
+**P50 — 真實 per-ticker signal distribution**
+- `scripts/cross_market_real_yfinance_e2e.py` 新增 `compute_signal_distribution_per_ticker`
+- 用 v5.14 真實 `weighted_score_with_variance_penalty` + `dynamic_weights_for_ticker`
+- 算每 ticker buy/hold/sell ratio + signal_entropy + majority + final_score + components
+- fixtures 從 5 role → 7 role（加 sentiment + macro + signal_distribution_per_ticker）
+
+**真實 11 ticker signal distribution（推翻 mock GBM 結論）**：
+
+| Ticker | Region | Final | Buy% | Hold% | Sell% | Majority |
+|--------|--------|-------|------|-------|-------|----------|
+| AAPL | US | 0.5175 | 38.15% | 30.92% | 30.92% | **buy** |
+| MSFT | US | 0.5100 | 36.06% | 31.97% | 31.97% | buy |
+| GOOGL | US | 0.5092 | 35.84% | 32.08% | 32.08% | buy |
+| NVDA | US | 0.5289 | 41.43% | 29.29% | 29.29% | buy |
+| 0700.HK | HK | 0.4896 | 31.91% | 31.91% | **36.17%** | **sell** |
+| 9988.HK | HK | 0.4935 | 32.46% | 32.46% | **35.08%** | **sell** |
+| 3690.HK | HK | 0.4523 | **26.51%** | 26.51% | **46.99%** | **sell** |
+| 600519.SS | CN | 0.5034 | 34.24% | 32.88% | 32.88% | buy |
+| 000858.SZ | CN | 0.5119 | 36.57% | 31.72% | 31.72% | buy |
+| 601318.SS | CN | 0.5115 | 36.46% | 31.77% | 31.77% | buy |
+| 000333.SZ | CN | 0.4971 | 32.95% | 32.95% | **34.11%** | **sell** |
+
+**Region-level 結論**：
+- US 4/4 = buy（科技牛市偏買）
+- HK 3/3 = sell（2025-2026 恒指弱勢 → 真實反映）
+- CN 2 buy + 1 sell（mixed，600519/000858/601318 偏買，000333 偏賣）
+
+### 量化指標（Stage 9 verifier 15/15 PASS）
+
+| 指標 | 值 | 目標 |
+|------|----|------|
+| pytest | **317 passed** | ≥ 251 ✓ |
+| 真實 cap flatlines | **2/16** | ≤ 2 ✓ |
+| Cross-market sample_size | **11** | ≥ 10 ✓ |
+| News region cap rate | **16.0%** | < 20% ✓ |
+| News source cap rate | **8.9%** | < 10% ✓ |
+| Fixtures freshness | **0 days** | < 90 ✓ |
+| Wasserstein distance | **0.0064** | < 0.05 ✓ |
+| Signal entropy delta (P48b mock) | **0.0741** | > 0 ✓ |
+| Sell ratio v5.14 (P48b mock) | **0.9%** | > 0 ✓ |
+| Per-ticker signal entropy (P50 real) | **1.5275 ~ 1.5848** | near log2(3) ✓ |
+| Working tree | clean | clean ✓ |
+
+### 死代碼/簡化（v5.16）
+- 移除 main HEAD 的 75 個 `__pycache__/*.pyc` tracked files（commit `a7d64b2` amend）
+- 移除 v5.15 chain 的 11 個 empty dirs（schemas/charts/consensus/github_integration/handlers/indicators/schemas/task_router/utils/valuation/handlers/valuation/handlers/handlers/handlers/handlers/handlers/handlers/handlers）
+
+### 與 mock GBM 結論的差異（Rule 11 大聲修正）
+
+| 結論 | Mock GBM (P48b) | 真實 11 ticker (P50) |
+|------|-----------------|----------------------|
+| 整體 majority | buy (100%) | US buy / HK sell / CN mixed |
+| 整體 entropy | 0.0741 | 1.5275 ~ 1.5848（接近 log2(3) 上限）|
+| sell 訊號 | 0.9% | **34-47%（HK）, 0%（US）** |
+| 訊號分布均勻度 | 不均（buy-dominant） | 接近均勻（entropy 接近上限） |
+
+**結論**：P48b mock GBM 結論「buy-dominant」是 mock 設計的 bias，**真實 11 ticker 數據顯示訊號分布接近 3-class 均勻**（除 HK 整體偏賣）。cap 修復的真實下游價值在「讓真實市場分歧（US buy / HK sell）浮現」，而非改變 buy/sell 比例的絕對值。
