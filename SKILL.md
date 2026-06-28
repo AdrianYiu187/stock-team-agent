@@ -1136,3 +1136,37 @@ dde0a54 fix(v5.14 P38 follow-up): dynamic pos_contribution base (meta-fix)
 - v5.15 P43+P44 + P45+P46: 251 passed
 - v5.15 P47+P48: **288 passed** (271 → 288, +17 P48)
 - 包含 3 層 quantifier pytest：P47 equal (11) + P48a dynamic (6) + P48b signal (11)
+
+---
+
+## v5.17 — HK Macro & 0700.HK PE 真實數據驗證（2026-06-29）
+
+### 重要發現（Rule 11 大聲修正先前假設）
+**HK 偏賣的真實原因 = macro + analyst disagreement，不是 PE**：
+
+- US macro 0.463 → US 4/4 buy
+- HK macro 0.323 (HSI 30d -14.08%) → HK 3/3 sell
+- CN macro 0.454-0.514 → CN mixed (3 buy + 1 sell)
+
+### Tencent 0700.HK 真實 PE 驗證
+- trailingPE 14.77, forwardPE 10.79, PEG 1.2, ROE 20.5%
+- PE linearization 公式：`pe_factor = 0.95 - 0.90 * (pe + 50) / 550`
+- PE 14.77 → pe_factor 0.8440（高分）→ fund_score 0.5453（buy-leaning）
+- **PE linearization 對 HK 完全公平，「PE 20-25 對 HK 偏負面」是先驗假設錯誤**
+
+### 0700.HK final 拆解
+- HK 權重: market 0.12 / tech 0.23 / fund 0.25 / risk 0.15 / sent 0.15 / news 0.07 / macro 0.08
+- weighted_avg = 0.5247
+- analyst_std = 0.0674 (macro 0.323 vs 其他 0.5+ 造成 disagreement)
+- penalty = max(0.85, 1-0.0674) = 0.9326
+- final = 0.5247 × 0.9326 = 0.4893 ≈ fixture 0.4896 ✓
+
+### 3690.HK outlier
+- pe=0 (虧損) + roe=-24% + peg=28.72 → fund_score 0.387（嚴重 sell）
+- 拖累 HK region 均值 → HK 整體 sell 比例 36-47%
+
+### 真實 HSI 30d 數據（2026-05-26 → 2026-06-26）
+- start=26388.44, end=22671.86, ret=-14.08%
+- daily_vol=1.09%, annualized_vol=17.27%
+- |ret|/ann_vol=0.8157, log1p=0.5965
+- macro = 0.5 + 0.3×(-1)×0.5965 = 0.3211（vs fixture 0.323, diff 0.002 ✓）
