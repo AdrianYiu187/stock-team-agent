@@ -1893,3 +1893,77 @@ v5.25 P1 真實 fundamental 注入揭露 v5.11.3 4D 整合改善 Δ -0.2449 為 
 ```
 audit-v5.26-2026-06-30 → 0ac7ea1 (closure HEAD, 5 commits ahead of v5.25)
 ```
+
+
+## v5.28 — Lesson #55 永久化: 7D 整合層 (sentiment + news + macro)（2026-06-30）
+
+### 背景
+
+v5.27 closure 完成 fund_heavy weights 套用 (Δ -19.49pp 改善 +2.64pp vs baseline)。
+v5.27 Step 3 candidate 量化發現 4D 整合在真實下整體負貢獻 (Δ -28.77pp)，揭示
+4 維度不足以反映多因子風險 — 需引入 sentiment (新聞情緒) + news (新聞覆蓋)
++ macro (宏觀經濟) 3 個新維度升級為 7D。
+
+### 2 Commits Ahead of v5.27 Green (`41df25a`)
+
+| Commit | Stage | 內容 | pytest |
+|--------|-------|------|--------|
+| `5af231d` | P1 red | `test_v528_7d_compute.py` 8 TDD guards (red) | 464 (8 fail) |
+| `1e560cf` | P1 green | `compute_7d_multifactor()` + `MULTIFACTOR_WEIGHTS_7D` + `apply_7d_weights()` | 473 (+9 green) |
+
+### P1 — 7D 整合層（green）
+
+**設計原則（最小代碼 + 向後相容）**:
+- `MULTIFACTOR_WEIGHTS` (4D) 保留 fund_heavy 不變，4D backtest path 完全不動
+- 新增 `MULTIFACTOR_WEIGHTS_7D` 常數（7 keys）: tech 0.18 / fund 0.37 / market 0.13 / risk 0.12 / sentiment 0.10 / news 0.05 / macro 0.05
+- **整合層而非計算層**: fixture `signal_distribution_per_ticker[t].components` 已含 7 維度預計算分數，無需重新計算 sentiment/news/macro multifactor
+- Fixture key mapping: `technical → tech`, `fundamental → fund`, 其餘對齊
+
+**新增 API**:
+- `compute_7d_multifactor(components: Dict[str, float]) -> Dict[str, float]`
+  - 純函數: 7 維度加權整合, 輸出 composite (round to 4)
+  - Raise `KeyError` 若 components 缺任何 7D key
+- `apply_7d_weights(components: Dict[str, float]) -> float`
+  - Helper for `quantify_v528_7d_candidate.py` 與 dashboard 7D card
+  - 只回傳 composite 純量
+
+**9 個 P1 green TDD guards** (`test_v528_7d_compute.py`):
+- 4 weights_7d constant guards: 存在 + 7 keys + balanced 值鎖定 + sum=1.0
+- 3 compute_7d guards: 函數存在 + 加權公式正確 + 純函數無狀態
+- 2 fixture integration guards: 11 ticker 都含 7 components + 7D Pearson ≥ noise floor
+
+### 量化結論（承 v5.28 Step 3 `59db9b7`）
+
+| Config | Pearson 改善 (vs raw) | 排名 |
+|--------|----------------------|------|
+| **full_7d_balanced_0_15** | **+21.74pp** | 1 |
+| add_macro_0_10 | +21.41pp | 2 |
+| baseline_4d_fund_heavy (noise floor) | +13.14pp | control |
+| add_sentiment_0_15 | +12.72pp | 4 |
+| add_news_0_10 | +12.57pp | 5 |
+
+**淨改善**: 7D vs 4D noise floor = **+8.6pp** (Pearson correlation vs signal_dist majority direction)
+**關鍵發現**: macro 是最關鍵的 7D 維度（macro_alone +21.41pp 接近 full 7D）
+**Sensitivity noise**: 4D baseline 重複跑 2 次 noise = +13.14pp, 故 7D 門檻需 ≥ 4D + 2pp buffer
+
+### Lesson #55 永久化 (NEW)
+
+> **4D 整合不足以反映多因子風險**, 必須升級為 7D（+ sentiment + news + macro）。
+> 5 個 HIGH-risk tickers (AAPL/GOOGL/600519.SS/000858.SZ/000333.SZ) 中 2 個反向 BUY,
+> 暗示 sentiment/news/macro 在 A 股特別關鍵 — 4D 漏掉這 3 維導致風險盲區。
+
+**Lesson #54 升級為 Lesson #55**:
+- 從「mock GBM 不適用於跨 ticker 4D 整合」升級為
+- **「4D 整合不足以反映多因子風險」**, 必須 7D (含 sentiment/news/macro)
+- 跨 ticker 整合驗證 → 必須 `compute_7d_multifactor()` + `MULTIFACTOR_WEIGHTS_7D`
+
+**未來 audit 規範**:
+- 任何 ticker-specific 結論 → 必須 7D composite (非 4D)
+- Per-region 重新校準 (v5.29 候選) → 從 7D 起步
+- Dashboard (v5.27 step2) → 加 4D/7D toggle 與 sentiment/news/macro 三 bar
+
+### Tag
+
+```
+audit-v5.28-2026-06-30 → 1e560cf (closure HEAD, 2 commits ahead of v5.27 green)
+```
