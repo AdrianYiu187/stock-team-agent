@@ -1825,3 +1825,71 @@ v5.21 closure (0): 7369c83 docs(v5.21 closure)
 ```
 audit-v5.22-2026-06-30 → <closure HEAD>
 ```
+
+## v5.26 — Lesson #54 永久化: Mock GBM vs 真實 Close Prices（2026-06-30）
+
+### 背景
+
+v5.25 closure (`9d2c546`) 完成 Lesson #53 三件套（pytest guard + CLI smoke test + 真實 fundamental 注入）。
+v5.25 P1 真實 fundamental 注入揭露 v5.11.3 4D 整合改善 Δ -0.2449 為 mock-specific artifact。
+本輪延伸 Lesson #53 到 close prices，量化 mock GBM 是否同樣抹平 ticker-specific 波動。
+
+### 5 Commits Ahead of `9d2c546`
+
+| Commit | Stage | 內容 | pytest |
+|--------|-------|------|--------|
+| `1aea5fd` | Stage 0 | v5.26 roadmap (Real Close Prices Backtest Injection) | docs |
+| `49fc16c` | Stage 1 | `quantify_v526_mock_vs_real_close.py` 量化腳本 | new script |
+| `1946b69` | P1 red | `test_v526_close_prices_injection.py` 8 TDD guards (red) | 412 → 414 (+2 sanity) |
+| `1ca1a31` | P1 green | `snapshot_close_prices.py` + `_resolve_close_prices()` + `close_source` 參數 | 414 → 420 (+8 green) |
+| `0ac7ea1` | P2 | `docs/v5.26_audit_results.md` 量化對比 + Lesson #54 永久化 | docs |
+
+### P1 — close_prices 注入（green）
+
+- **`snapshot_close_prices.py`**: 一次性從 yfinance 拉 11 ticker × ~120 day close prices 寫入 fixture
+  - US/HK ticker = 120 days, CN ticker = 118 days (yfinance 農曆假期限制)
+  - Fixture 變大 10.2KB → ~21KB（可接受）
+- **`backtest_v511_multifactor.py`**:
+  - 新增 `_resolve_close_prices()` helper 統一 mock/real 注入路徑
+  - `run_cross_market_comparison()` 加 `close_source: Literal["mock","real"]="mock"` 參數（向後相容）
+  - 簡化 v5.25 fixture loading 重複（2 次 `with open` → 1 次）
+- **`tests/test_v526_close_prices_injection.py`**: 8 P1 green TDD guards
+  - 4 fixture guards (key/11 ticker/118-120 day length/all positive)
+  - 3 close_source 參數 guards (signature/mock backward compat/real fixture path)
+  - 1 mock ≠ real 差異驗證 (Lesson #53 延伸)
+
+### P2 — Mock vs Real 量化對比
+
+| 指標 | mock GBM (v5.25) | 真實 close prices (v5.26) | Δ |
+|------|------------------|---------------------------|---|
+| Annualized vol | 24.9% (單一) | 21.0-46.9% (per-ticker, 2.24x) | 揭示 ticker-specific 差異 |
+| Mean Δ (v5.10→v5.11.3 directional_accuracy) | -13.36pp | **-28.77pp** | 惡化 2.15x |
+| Std Δ | 18.07pp | **32.29pp** | 異質性 +78.6% |
+| Max per-ticker diff vs mock | 0 | **90.88pp** (000333.SZ) | mock 完全反轉結論方向 |
+
+**Per-Ticker 關鍵發現**:
+- AAPL: mock Δ=-6.19pp → real Δ=+28.57pp (差異 +34.76pp, mock 嚴重低估)
+- GOOGL: mock Δ=-11.36pp → real Δ=-70.83pp (差異 -59.47pp)
+- 000333.SZ: mock Δ=+16.41pp → real Δ=-74.47pp (差異 -90.88pp, **方向反轉**)
+
+### Lesson #54 永久化 (NEW)
+
+> **mock GBM 適用於技術指標單元測試，但**不適用於 4D 整合驗證**。
+> mock 抹平 ticker-specific 波動差異，導致 per-ticker 結論失真高達 ±90pp。
+
+**Lesson #53 升級為 4 件套**:
+1. pytest guard 永久化
+2. CLI smoke test 跨 process 邊界
+3. 真實 fundamental 注入 (v5.25 P1)
+4. **真實 close prices 注入 (v5.26 P1, NEW)**
+
+**未來 audit 規範**:
+- 技術指標單元測試（RSI/MACD/MA50/momentum 計算）→ mock GBM 可接受
+- 跨 ticker 4D 整合驗證 → 必須 `close_source="real"` + 真實 fundamental fixture
+- mock 模式保留為技術指標回歸工具，不作為跨 ticker 結論來源
+
+### Tag
+
+```
+audit-v5.26-2026-06-30 → 0ac7ea1 (closure HEAD, 5 commits ahead of v5.25)
+```
