@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import statistics
 import sys
 from datetime import datetime, timezone
@@ -40,6 +41,16 @@ from typing import Callable, Optional
 
 # 確保 scripts/ 在 path 中
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+# v5.24 P2 — cap-zone warning logger (Lesson #49 整合)
+# main() 跑完 scores 後呼叫,operator dashboard 自動看到 cap-zone collision。
+# Frozen mode (CI / pytest) 不寫 fixtures 但仍 emit warnings,確保 pytest guard 可捕獲。
+logger = logging.getLogger("cross_market_e2e")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 
 # 載入 v5.10 source from commit 0f30069 baseline
 V510_PATH = Path("/tmp/v510_stock_analysis.py")
@@ -354,6 +365,23 @@ def main() -> int:
     print(f"  v5.11.3 std = {quant['v5_11_3_std']:.4f}")
     print(f"  Δ std       = {quant['std_delta']:+.4f}")
     print(f"\n💡 {quant['interpretation']}")
+
+    # v5.24 P2 — Lesson #49 整合: live mode 跑完自動 cap-zone warning
+    # operator dashboard 從 logger 看到哪些 ticker 撞 cap,不必手動跑 cap_coverage_report。
+    # Frozen mode (CI / pytest) 也 emit,確保 3690.HK PEG=28.72 warning pytest guard 可捕獲。
+    from data_sources.live_score_engine import (
+        recompute_cross_market_with_cap_warnings,
+    )
+    _cap_result = recompute_cross_market_with_cap_warnings(fundamentals)
+    for w in _cap_result["cap_warnings"]:
+        tickers_preview = ", ".join(w["tickers"][:5])
+        extra = "..." if len(w["tickers"]) > 5 else ""
+        logger.warning(
+            f"⚠️  Cap-zone collision: {w['metric']} "
+            f"({w['n_in_cap_zone']}/{len(fundamentals)} tickers, "
+            f"threshold={w['threshold_value']}, by_design={w['is_by_design']}): "
+            f"{tickers_preview}{extra}"
+        )
 
     # v5.16 P50 — Per-ticker signal distribution（從 fixtures 讀 sentiment + macro）
     sentiment_dict = {}
