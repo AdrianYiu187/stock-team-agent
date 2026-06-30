@@ -47,23 +47,4 @@ def fetch_one(ticker: str) -> dict:
     }
 
 
-def fetch_all(tickers: list[str]) -> dict:
-    """從 yfinance 拉多 ticker 真實 fundamentals（per-ticker fail tolerance）.
 
-    Returns:
-        {
-            "fundamentals": {ticker: {pe, roe, peg, growth}, ...},
-            "failed": [ticker, ...],
-        }
-    """
-    out: dict[str, dict] = {}
-    failed: list[str] = []
-    for t in tickers:
-        try:
-            out[t] = fetch_one(t)
-        except Exception as e:
-            print(f"⚠️  {t} yfinance 拉取失敗：{e}")
-            failed.append(t)
-    if failed:
-        print(f"⚠️  {len(failed)}/{len(tickers)} ticker 失敗：{failed}")
-    return {"fundamentals": out, "failed": failed}
