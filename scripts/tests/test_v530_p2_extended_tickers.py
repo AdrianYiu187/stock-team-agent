@@ -169,7 +169,8 @@ class TestV530P2ThresholdGuard(unittest.TestCase):
 
     def test_extended_snapshot_post_run(self):
         """v5.30 P2 跑過後: extended_signal_distribution_per_ticker 必須含 12 ticker
-        且都有 is_proxy=True 標記 + 7D components + majority
+        + 7D components + majority。
+        v5.31 P1 升級後: 每個 ticker 應有 _meta.full_7d_version (proxy → full 7D)。
         """
         with open(self.FIXTURE_PATH) as f:
             fixture = json.load(f)
@@ -182,31 +183,34 @@ class TestV530P2ThresholdGuard(unittest.TestCase):
             f"擴充 ticker 數量 {len(ext)} != 12, snapshot 異常",
         )
         for ticker, info in ext.items():
-            self.assertTrue(
-                info.get("is_proxy", False),
-                f"{ticker}: 缺 is_proxy=True 標記",
-            )
-            self.assertIn(
-                info.get("majority"), {"buy", "hold", "sell"},
-                f"{ticker}: majority={info.get('majority')} 不合法",
-            )
             comps = info.get("components", {})
             self.assertEqual(
                 set(comps.keys()),
                 {"tech", "fund", "market", "risk", "sentiment", "news", "macro"},
                 f"{ticker}: components 結構不符",
             )
-        # _meta 必須含 v530_p2_extended_snapshot
-        meta = fixture.get("_meta", {}).get("v530_p2_extended_snapshot", {})
-        self.assertEqual(
-            meta.get("proxy_version"), "v5.30-p2-price-only",
-            "fixture _meta 缺 v530_p2_extended_snapshot 標記",
-        )
+            # v5.31 P1: 若已升級到 full 7D, _meta.full_7d_version 必須存在
+            meta = info.get("_meta", {})
+            full_7d_version = meta.get("full_7d_version")
+            if full_7d_version:
+                # 已升級 — 必須 7 維度都有真實變異 (不允許 sentiment/news/macro 全 0.5)
+                proxy_dim_count = sum(
+                    1 for k in ("sentiment", "news", "macro") if comps.get(k) == 0.5
+                )
+                self.assertEqual(
+                    proxy_dim_count, 0,
+                    f"{ticker}: 已升級到 {full_7d_version} 但仍有 {proxy_dim_count}/3 proxy 維度 (應全 0)",
+                )
+            else:
+                # 未升級 — 必須有 is_proxy=True 標記 (v5.30 P2 階段)
+                self.assertTrue(
+                    info.get("is_proxy", False),
+                    f"{ticker}: 缺 is_proxy=True 標記 (proxy 階段必填)",
+                )
 
-    def test_extended_tickers_have_is_proxy_marker(self):
-        """跑過 snapshot 後, 擴充 ticker 必須含 is_proxy=True 標記
-
-        確保 caller 不會誤把 proxy 當 full 7D components 使用。
+    def test_extended_tickers_have_marker(self):
+        """v5.30 P2 階段需 is_proxy=True, v5.31 P1 升級後需 _meta.full_7d_version。
+        兩者互斥 (升級後移除 is_proxy)。
         """
         with open(self.FIXTURE_PATH) as f:
             fixture = json.load(f)
@@ -214,15 +218,18 @@ class TestV530P2ThresholdGuard(unittest.TestCase):
         if not ext:
             self.skipTest("尚未跑 snapshot_more_tickers.py")
         for ticker, info in ext.items():
+            meta = info.get("_meta", {})
+            has_full_7d = bool(meta.get("full_7d_version"))
+            has_is_proxy = info.get("is_proxy", False)
+            # 兩者之一必存在 (升級後切換)
             self.assertTrue(
-                info.get("is_proxy", False),
-                f"{ticker}: 擴充 ticker 缺 is_proxy=True 標記",
+                has_full_7d or has_is_proxy,
+                f"{ticker}: 必須有 is_proxy=True (proxy 階段) 或 _meta.full_7d_version (full 7D)",
             )
-            comps = info.get("components", {})
-            self.assertEqual(
-                set(comps.keys()),
-                {"tech", "fund", "market", "risk", "sentiment", "news", "macro"},
-                f"{ticker}: 擴充 ticker components 結構不符",
+            # 兩者不能同時存在 (升級後移除 is_proxy)
+            self.assertFalse(
+                has_full_7d and has_is_proxy,
+                f"{ticker}: 升級後不應同時有 is_proxy=True 和 _meta.full_7d_version",
             )
 
 

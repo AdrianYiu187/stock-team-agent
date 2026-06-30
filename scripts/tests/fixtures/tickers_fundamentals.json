@@ -1815,11 +1815,24 @@
         "fund": 0.5,
         "market": 0.5427,
         "risk": 0.5174,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.16,
+        "news": 0.4773,
+        "macro": 0.6078
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.3653,
+          "fund": 0.5,
+          "market": 0.5427,
+          "risk": 0.5174,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.085691+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "META": {
       "buy_ratio": 0.1,
@@ -1833,11 +1846,24 @@
         "fund": 0.5,
         "market": 0.1735,
         "risk": 0.4491,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.2229,
+        "news": 0.5505,
+        "macro": 0.6688
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.3949,
+          "fund": 0.5,
+          "market": 0.1735,
+          "risk": 0.4491,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086049+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "TSLA": {
       "buy_ratio": 0.33,
@@ -1851,11 +1877,24 @@
         "fund": 0.5,
         "market": 0.6169,
         "risk": 0.2836,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.5354,
+        "news": 0.4672,
+        "macro": 0.69
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.4838,
+          "fund": 0.5,
+          "market": 0.6169,
+          "risk": 0.2836,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086054+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "JPM": {
       "buy_ratio": 0.6,
@@ -1869,11 +1908,24 @@
         "fund": 0.5,
         "market": 0.8904,
         "risk": 0.6941,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.8162,
+        "news": 0.324,
+        "macro": 0.48
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.6844,
+          "fund": 0.5,
+          "market": 0.8904,
+          "risk": 0.6941,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086059+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "V": {
       "buy_ratio": 0.33,
@@ -1887,11 +1939,24 @@
         "fund": 0.5,
         "market": 0.7436,
         "risk": 0.7263,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.6544,
+        "news": 0.5722,
+        "macro": 0.7775
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.5975,
+          "fund": 0.5,
+          "market": 0.7436,
+          "risk": 0.7263,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086064+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "JNJ": {
       "buy_ratio": 0.6,
@@ -1905,11 +1970,24 @@
         "fund": 0.5,
         "market": 1.0,
         "risk": 0.6798,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.84,
+        "news": 0.4524,
+        "macro": 0.587
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.761,
+          "fund": 0.5,
+          "market": 1.0,
+          "risk": 0.6798,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086068+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "0941.HK": {
       "buy_ratio": 0.1,
@@ -1923,11 +2001,24 @@
         "fund": 0.5,
         "market": 0.0,
         "risk": 0.8529,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.1838,
+        "news": 0.516,
+        "macro": 0.64
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.3108,
+          "fund": 0.5,
+          "market": 0.0,
+          "risk": 0.8529,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086073+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "1299.HK": {
       "buy_ratio": 0.1,
@@ -1941,11 +2032,24 @@
         "fund": 0.5,
         "market": 0.058,
         "risk": 0.5202,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.2232,
+        "news": 0.5508,
+        "macro": 0.669
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.2838,
+          "fund": 0.5,
+          "market": 0.058,
+          "risk": 0.5202,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086077+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "0388.HK": {
       "buy_ratio": 0.1,
@@ -1959,11 +2063,24 @@
         "fund": 0.5,
         "market": 0.0098,
         "risk": 0.7156,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.1773,
+        "news": 0.5103,
+        "macro": 0.6353
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.3075,
+          "fund": 0.5,
+          "market": 0.0098,
+          "risk": 0.7156,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086082+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "2318.HK": {
       "buy_ratio": 0.1,
@@ -1977,11 +2094,24 @@
         "fund": 0.5,
         "market": 0.0218,
         "risk": 0.6732,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.16,
+        "news": 0.3129,
+        "macro": 0.4708
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.2853,
+          "fund": 0.5,
+          "market": 0.0218,
+          "risk": 0.6732,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086086+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "2628.HK": {
       "buy_ratio": 0.1,
@@ -1995,11 +2125,24 @@
         "fund": 0.5,
         "market": 0.2047,
         "risk": 0.2801,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.2372,
+        "news": 0.5631,
+        "macro": 0.6793
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.3935,
+          "fund": 0.5,
+          "market": 0.2047,
+          "risk": 0.2801,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086093+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     },
     "1177.HK": {
       "buy_ratio": 0.1,
@@ -2013,11 +2156,24 @@
         "fund": 0.5,
         "market": 0.0526,
         "risk": 0.5417,
-        "sentiment": 0.5,
-        "news": 0.5,
-        "macro": 0.5
+        "sentiment": 0.1797,
+        "news": 0.5124,
+        "macro": 0.637
       },
-      "is_proxy": true
+      "_meta": {
+        "full_7d_version": "v5.31-p1-volatility-derived",
+        "proxy_components": {
+          "tech": 0.3395,
+          "fund": 0.5,
+          "market": 0.0526,
+          "risk": 0.5417,
+          "sentiment": 0.5,
+          "news": 0.5,
+          "macro": 0.5
+        },
+        "upgraded_at": "2026-06-30T08:57:02.086098+00:00",
+        "upgrade_algorithm": "deterministic_from_buy_hold_sell_ratio"
+      }
     }
   }
 }

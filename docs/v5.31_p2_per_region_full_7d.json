@@ -1,0 +1,92 @@
+{
+  "regions": {
+    "US": {
+      "n_tickers": 10,
+      "tickers": [
+        "AMZN",
+        "META",
+        "TSLA",
+        "JPM",
+        "V",
+        "JNJ",
+        "AAPL",
+        "MSFT",
+        "GOOGL",
+        "NVDA"
+      ],
+      "best_config": "global_4d_fund_heavy",
+      "best_pearson": 0.7033,
+      "results": {
+        "global_4d_fund_heavy": 0.7033,
+        "global_7d_balanced_0_15": 0.6652,
+        "us_tech_heavy": 0.6218,
+        "hk_fund_heavy": 0.6772,
+        "cn_macro_heavy": 0.4072
+      }
+    },
+    "HK": {
+      "n_tickers": 9,
+      "tickers": [
+        "0941.HK",
+        "1299.HK",
+        "0388.HK",
+        "2318.HK",
+        "2628.HK",
+        "1177.HK",
+        "0700.HK",
+        "9988.HK",
+        "3690.HK"
+      ],
+      "best_config": "global_4d_fund_heavy",
+      "best_pearson": 0.0,
+      "results": {
+        "global_4d_fund_heavy": 0.0,
+        "global_7d_balanced_0_15": 0.0,
+        "us_tech_heavy": 0.0,
+        "hk_fund_heavy": 0.0,
+        "cn_macro_heavy": 0.0
+      }
+    },
+    "CN": {
+      "n_tickers": 4,
+      "tickers": [
+        "600519.SS",
+        "000858.SZ",
+        "601318.SS",
+        "000333.SZ"
+      ],
+      "best_config": "global_4d_fund_heavy",
+      "best_pearson": 0.9452,
+      "results": {
+        "global_4d_fund_heavy": 0.9452,
+        "global_7d_balanced_0_15": 0.9146,
+        "us_tech_heavy": 0.8978,
+        "hk_fund_heavy": 0.9228,
+        "cn_macro_heavy": 0.4111
+      }
+    }
+  },
+  "global_best": {
+    "global_4d_fund_heavy": 0.7468,
+    "global_7d_balanced_0_15": 0.731,
+    "us_tech_heavy": 0.699,
+    "hk_fund_heavy": 0.7495,
+    "cn_macro_heavy": 0.6524
+  },
+  "v530_baseline": {
+    "US": 0.71,
+    "HK": 0.0,
+    "CN": 0.9452
+  },
+  "summary": {
+    "us_improvement_pp": -0.67,
+    "us_v531_pearson": 0.7033,
+    "us_n_tickers": 10,
+    "hk_improvement_pp": 0.0,
+    "hk_v531_pearson": 0.0,
+    "hk_n_tickers": 9,
+    "cn_improvement_pp": 0.0,
+    "cn_v531_pearson": 0.9452,
+    "cn_n_tickers": 4
+  }
+}

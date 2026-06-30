@@ -41,10 +41,23 @@ from backtest_v511_multifactor import (  # noqa: E402
     run_cross_market_comparison,
 )
 
+# v5.31 P0 — 4D fund_heavy weights 推廣為 7D shape (4 維度 + sentiment/news/macro=0)
+# 用於 HK/CN region (兩者皆用 4D 路徑) 避免 hardcoded 重複
+WEIGHTS_4D_FUND_HEAVY = {
+    **dict(MULTIFACTOR_WEIGHTS),
+    "sentiment": 0.0,
+    "news": 0.0,
+    "macro": 0.0,
+}
+
+# v5.31 P0 — Signal threshold 常數 (從 4D composite_to_signal 同步, 避免 future drift)
+BUY_THRESHOLD = 0.58
+SELL_THRESHOLD = 0.45
+
 # v5.30 P3 — Per-region 7D weight 預設（量化勝出）
 # 來源：v5.30 P2 evaluate_per_region_extended() 量化結果
 # - US (10 ticker, 擴充後): best = hk_fund_heavy, Pearson=+0.7100
-# - HK (9 ticker, 擴充後): 樣本全 sell, Pearson 變異為 0, 暫用 global_4d_fund_heavy 為保守預設
+# - HK (9 ticker, 擴充後): 樣本全 sell, Pearson 變異為 0, 暫用 WEIGHTS_4D_FUND_HEAVY 為保守預設
 # - CN (4 ticker): best = global_4d_fund_heavy (反轉結論, 4D 反而最穩)
 # - Global: v5.30 預設 cn_macro_heavy
 PER_REGION_WEIGHTS_7D = {
@@ -54,14 +67,12 @@ PER_REGION_WEIGHTS_7D = {
         "_source": "us_fund_heavy (v5.30 P2 best, Pearson=+0.7100)",
     },
     "HK": {
-        "tech": 0.20, "fund": 0.50, "market": 0.15, "risk": 0.15,
-        "sentiment": 0.0, "news": 0.0, "macro": 0.0,
-        "_source": "global_4d_fund_heavy (HK 樣本 proxy 限制, 保守預設)",
+        **dict(WEIGHTS_4D_FUND_HEAVY),
+        "_source": "WEIGHTS_4D_FUND_HEAVY (HK 樣本 proxy 限制, 保守預設)",
     },
     "CN": {
-        "tech": 0.20, "fund": 0.50, "market": 0.15, "risk": 0.15,
-        "sentiment": 0.0, "news": 0.0, "macro": 0.0,
-        "_source": "global_4d_fund_heavy (v5.29 反轉結論, Pearson=+0.9452)",
+        **dict(WEIGHTS_4D_FUND_HEAVY),
+        "_source": "WEIGHTS_4D_FUND_HEAVY (v5.29 反轉結論, Pearson=+0.9452)",
     },
     "global": {
         **dict(MULTIFACTOR_WEIGHTS_7D),
@@ -96,8 +107,8 @@ REGION_DISPLAY = {
 
 app = FastAPI(
     title="Stock Team Agent — Operator Dashboard API",
-    description="v5.28 — fund_heavy 4D + 7D 整合層 (sentiment+news+macro)",
-    version="5.28.0",
+    description="v5.28 P2 + v5.30 P3 + v5.31 P0/P1 — 4D fund_heavy + 7D 整合層 (sentiment+news+macro) + per-region weights",
+    version="5.31.0",
 )
 
 # CORS for dashboard/index.html 本地開發
@@ -185,7 +196,7 @@ def health() -> HealthResponse:
     """健康檢查 + 當前 weights。"""
     return HealthResponse(
         status="ok",
-        version="5.28.0",
+        version="5.31.0",
         weights=dict(MULTIFACTOR_WEIGHTS),
     )
 
@@ -204,7 +215,7 @@ def config() -> dict:
             "available_regions": ["US", "HK", "CN", "global"],  # v5.30 P3 NEW
             "close_source_default": "real",
             "available_close_sources": ["mock", "real"],
-            "version": "5.30.0"
+            "version": "5.31.0"
         }
     """
     return {
@@ -216,7 +227,7 @@ def config() -> dict:
         "available_regions": ["US", "HK", "CN", "global"],
         "close_source_default": "real",
         "available_close_sources": ["mock", "real"],
-        "version": "5.30.0",
+        "version": "5.31.0",
     }
 
 
@@ -325,10 +336,10 @@ def cross_market_7d(
             sum(components_7d[k] * weights_7d[k] for k in weights_7d),
             4,
         )
-        # 與 4D 共用 signal threshold (composite_to_signal: >0.58 BUY / <0.45 SELL / else HOLD)
-        if composite_7d > 0.58:
+        # 與 4D 共用 signal threshold (composite_to_signal: >BUY_THRESHOLD / <SELL_THRESHOLD / else HOLD)
+        if composite_7d > BUY_THRESHOLD:
             signal = "BUY"
-        elif composite_7d < 0.45:
+        elif composite_7d < SELL_THRESHOLD:
             signal = "SELL"
         else:
             signal = "HOLD"
@@ -355,7 +366,7 @@ def cross_market_7d(
                 "weights_7d": dict(weights_7d),
                 "region": region,
                 "source": "fixture_signal_distribution_per_ticker",
-                "version": "5.30.0",
+                "version": "5.31.0",
             },
             "per_ticker": per_ticker,
         }
