@@ -34,7 +34,7 @@ import statistics
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 
 import numpy as np
 
@@ -511,11 +511,44 @@ def print_report(result: Dict) -> None:
 # v5.25 P1 — Cross-Market 真實 fundamental 注入整合
 # ============================================================================
 
+def _resolve_close_prices(
+    ticker: str,
+    close_source: Literal["mock", "real"],
+    fixture_close_prices: Optional[Dict[str, List[float]]],
+    n_days: int,
+    seed: int,
+) -> np.ndarray:
+    """v5.26 P1 — 解析單 ticker close prices (mock GBM 或 fixture 真實)。
+
+    Args:
+        ticker: ticker symbol
+        close_source: "mock" → generate_mock_prices(seed); "real" → fixture[ticker]
+        fixture_close_prices: 真實模式下必填, {ticker: [120 floats]}
+        n_days: mock 模式天數
+        seed: mock 模式 seed
+
+    Returns:
+        close prices np.ndarray
+
+    Raises:
+        ValueError: real 模式但 ticker 不在 fixture_close_prices
+    """
+    if close_source == "real":
+        if not fixture_close_prices or ticker not in fixture_close_prices:
+            raise ValueError(
+                f"close_source='real' 但 ticker '{ticker}' 不在 fixture close_prices; "
+                f"請先跑 `python scripts/snapshot_close_prices.py` 拉真實數據"
+            )
+        return np.array(fixture_close_prices[ticker], dtype=float)
+    return generate_mock_prices(n_days=n_days, seed=seed)
+
+
 def run_cross_market_comparison(
     n_days: int = 120,
     seed: int = 42,
     tickers: Optional[List[str]] = None,
     fixtures_path: Optional[Path] = None,
+    close_source: Literal["mock", "real"] = "mock",
 ) -> Dict:
     """v5.25 P1 — 跨 11 ticker 真實 fundamental 注入 backtest。
 
@@ -536,25 +569,26 @@ def run_cross_market_comparison(
         - "v5.11.3": {overall_accuracy, ...} (4D aggregate)
         - "per_ticker": {ticker: {tech, fund, market, risk, composite, n_predictions}}
         - "cap_warnings": [{metric, tickers, threshold_value, is_by_design, n_in_cap_zone}]
+        - "close_source": "mock" 或 "real" (v5.26 P1 注入)
     """
     # 延遲 import 避免 circular dependency (live_score_engine 也 import backtest chain)
     from data_sources.live_score_engine import (
         recompute_cross_market_with_cap_warnings,
     )
 
-    # 1. 載入 fixture 11 ticker 真實 fundamental
+    # 1. 載入 fixture 11 ticker 真實 fundamental + (v5.26 P1) close_prices
     if fixtures_path is None:
         # v5.25 P1 — 用 __file__ 推算 fixture 路徑,避免 _TESTS_DIR global
         fixtures_path = Path(__file__).resolve().parent / "tests" / "fixtures" / "tickers_fundamentals.json"
+    with open(fixtures_path, "r", encoding="utf-8") as f:
+        fixture_data = json.load(f)
+    fixture_close_prices = fixture_data.get("close_prices")  # None if not snapshot yet
+
     if tickers is None:
         # 從 fixture 拿 ticker order (避免 hardcode duplication)
-        with open(fixtures_path, "r", encoding="utf-8") as f:
-            fixture_data = json.load(f)
         tickers = list(fixture_data["fundamentals"].keys())
         fundamentals_raw = fixture_data["fundamentals"]
     else:
-        with open(fixtures_path, "r", encoding="utf-8") as f:
-            fixture_data = json.load(f)
         fundamentals_raw = {t: fixture_data["fundamentals"][t] for t in tickers if t in fixture_data["fundamentals"]}
 
     # 2. 跑 v5.10 (技術 only, 無 fund 依賴)
@@ -562,7 +596,7 @@ def run_cross_market_comparison(
     for ticker in tickers:
         if ticker not in fundamentals_raw:
             continue
-        close = generate_mock_prices(n_days=n_days, seed=seed)
+        close = _resolve_close_prices(ticker, close_source, fixture_close_prices, n_days, seed)
         v510_preds = run_v510_backtest_path(close, days=90)
         v510_all_preds.extend(v510_preds)
 
@@ -575,7 +609,7 @@ def run_cross_market_comparison(
         if ticker not in fundamentals_raw:
             continue
         fund = fundamentals_raw[ticker]
-        close = generate_mock_prices(n_days=n_days, seed=seed)
+        close = _resolve_close_prices(ticker, close_source, fixture_close_prices, n_days, seed)
         v5113_preds = run_v5113_backtest_path(
             close, days=90,
             pe=float(fund.get("pe", 25.0)),
@@ -604,7 +638,7 @@ def run_cross_market_comparison(
     return {
         "config": {
             "n_days": n_days, "seed": seed, "n_tickers": len(per_ticker),
-            "weights": MULTIFACTOR_WEIGHTS,
+            "weights": MULTIFACTOR_WEIGHTS, "close_source": close_source,
         },
         "v5.10": v510_metrics,
         "v5.11.3": v5113_metrics,

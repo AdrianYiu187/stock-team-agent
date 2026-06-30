@@ -52,12 +52,17 @@ class TestV526ClosePricesFixture:
         assert len(close_prices) == 11, f"期望 11 ticker close_prices, 實際 {len(close_prices)}"
 
     def test_close_prices_array_length_120(self):
-        """P1 fixture 長度: 每 ticker close prices 陣列 = 120 days (與 mock 一致)。"""
+        """P1 fixture 長度: 每 ticker close prices 陣列 118-120 days (對齊 mock n_days=120)。
+
+        v5.26 P1 真實拉取發現: US/HK ticker = 120 days (5 trading day/week),
+        CN ticker = 118 days (因農曆假期 yfinance 數據集略少)。
+        接受 118 ≤ len ≤ 120 容差。
+        """
         with open(FIXTURES_PATH) as f:
             data = json.load(f)
         for ticker, prices in data.get("close_prices", {}).items():
-            assert len(prices) == 120, (
-                f"{ticker} close_prices 長度 {len(prices)} ≠ 120"
+            assert 118 <= len(prices) <= 120, (
+                f"{ticker} close_prices 長度 {len(prices)} 不在 [118, 120] 範圍內"
             )
 
     def test_close_prices_all_positive(self):
