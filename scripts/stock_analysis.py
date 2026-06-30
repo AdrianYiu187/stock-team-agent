@@ -834,7 +834,29 @@ if __name__ == "__main__":
         """同時輸出到console和報告緩存"""
         print(line, flush=True)
         _report_lines.append(line)
-    
+
+    def _json_safe(obj):
+        """v5.20: 遞迴轉換 numpy 型別為 JSON-safe（解決 backtest 結果含 np.bool_ 導致 dump 失敗）。
+        Lazy-import numpy（避免 stock_analysis.py 直接依賴 numpy；保持 import graph 乾淨）。"""
+        try:
+            import numpy as _np
+        except ImportError:
+            _np = None
+        if isinstance(obj, dict):
+            return {k: _json_safe(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_json_safe(v) for v in obj]
+        if _np is not None:
+            if isinstance(obj, _np.bool_):
+                return bool(obj)
+            if isinstance(obj, _np.integer):
+                return int(obj)
+            if isinstance(obj, _np.floating):
+                return float(obj)
+            if isinstance(obj, _np.ndarray):
+                return obj.tolist()
+        return obj
+
     # ============================================================
     # 第一階段：數據收集
     # ============================================================
@@ -1981,7 +2003,7 @@ if __name__ == "__main__":
         _result["output_dir"] = OUTPUT_DIR
         _json_path = os.path.join(OUTPUT_DIR, "analysis_result.json")
         with open(_json_path, "w", encoding="utf-8") as _f:
-            json.dump(_result, _f, ensure_ascii=False, indent=2)
+            json.dump(_json_safe(_result), _f, ensure_ascii=False, indent=2)
         _add_report_line(f"📄 JSON結果已保存: {_json_path}")
     except Exception as e:
         _add_report_line(f"⚠️ JSON保存失敗: {e}")
@@ -2008,12 +2030,11 @@ if __name__ == "__main__":
             _add_report_line(f"   📈 Buy 精準度: {_btm.get('precision_buy', 0)*100:.1f}%")
             _add_report_line(f"   📉 Sell 精準度: {_btm.get('precision_sell', 0)*100:.1f}%")
             _add_report_line(f"   📊 Buy/Sell/Hold: {_bt['signal_counts'].get('buy', 0)}/{_bt['signal_counts'].get('sell', 0)}/{_bt['signal_counts'].get('hold', 0)}")
-            import json as _json
             _bt_dir = Path.home() / ".hermes" / "stock_backtest"
             _bt_dir.mkdir(exist_ok=True)
             _bt_path = _bt_dir / f"{STOCK_CODE}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             with open(_bt_path, "w", encoding="utf-8") as _f:
-                _json.dump(_bt, _f, ensure_ascii=False, indent=2)
+                json.dump(_json_safe(_bt), _f, ensure_ascii=False, indent=2)
             _add_report_line(f"   ✅ 回測報告已保存: {_bt_path}")
         else:
             _add_report_line("   ⚠️ 回測數據不足（< 90 天歷史）")

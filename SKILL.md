@@ -1,6 +1,6 @@
 ---
 name: stock-team-agent
-description: Stock_Team_Agent v5.15 (2026-06-28) — P43/P44 news region/source cap 線性化（cap rate 50-59% → 9-16%, -43pp）, 251 tests passed, v5.15 P41/P42 deferred, Lesson 29 (directional_accuracy ≈ buy-only baseline) documented
+description: Stock_Team_Agent v5.20 (2026-06-30) — E2E AAPL 揭露 v5.7 B9 修復不完整（stock_analysis.py 無 _json_safe 保護，np.bool_ 觸發 JSON dump 失敗），加 lazy-import numpy _json_safe + 移除冗餘 import + 6 條永久守護測試，339 pytest + E2E 0-warning
 ---
 
 # Stock_Team_Agent
@@ -1289,3 +1289,96 @@ dde0a54 fix(v5.14 P38 follow-up): dynamic pos_contribution base (meta-fix)
 `scripts/quantify_v519_cap_progression.py` (ad-hoc 量化器，不入 pytest)：
 - 11 ticker (US 4 + HK 3 + CN 4) 跑 3 種 news_count scenario
 - 量化 v5.18 cap flatline vs v5.19 progressive 對 final score 影響
+
+---
+
+## v5.20 — _json_safe np.bool_ Bug Fix（2026-06-30）
+
+### E2E AAPL 真實揭露（Rule 11 大聲承認：v5.7 B9 修復不完整）
+
+跑 `python3 scripts/stock_analysis.py -c AAPL -n "Apple Inc."` 看到：
+```
+⚠️ 自動回測失敗: Object of type bool is not JSON serializable
+⚠️ JSON保存失敗: Object of type bool is not JSON serializable
+```
+
+**根因**：v5.7 B9 修復只給 `backtest_engine.py` 加 `_json_safe()`，**stock_analysis.py 完全沒保護**。
+- backtest 結果的 `buy_correct` / `sell_correct` 是 `numpy.bool_`（np.where 返回）
+- `stock_analysis.py` line 1984 `json.dump(_result, ...)` 直接 reject
+- `stock_analysis.py` line 2011 `import json as _json`（**冗餘** import — 頂層 line 8 已 import json）
+- line 2016 `_json.dump(_bt, ...)` 雖然 backtest 內部已 dump 一次，仍重複 dump → 重複 fail
+
+### 修復策略
+
+| 改動 | 文件 | 行為 |
+|------|------|------|
+| 加 `_json_safe()` 嵌套函數 | `stock_analysis.py` line 838-852 | Lazy import numpy（避免 stock_analysis.py 直接依賴 numpy，保持 import graph 乾淨） |
+| 套用 `_json_safe(_result)` | line 1984 | analysis_result.json 不再 fail |
+| 套用 `_json_safe(_bt)` | line 2016 | P13 backtest json 不再 fail |
+| 移除 `import json as _json` | line 2011 | 用頂層 json 即可 |
+
+### _json_safe 設計（與 backtest_engine.py 不同）
+
+```python
+def _json_safe(obj):
+    try:
+        import numpy as _np  # lazy import
+    except ImportError:
+        _np = None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if _np is not None:
+        if isinstance(obj, _np.bool_):
+            return bool(obj)
+        if isinstance(obj, _np.integer):
+            return int(obj)
+        if isinstance(obj, _np.floating):
+            return float(obj)
+        if isinstance(obj, _np.ndarray):
+            return obj.tolist()
+    return obj
+```
+
+**與 backtest_engine._json_safe 差異**：
+- stock_analysis.py 沒 `import numpy`，所以 lazy import
+- 避免 stock_analysis.py → numpy 直接依賴（Rule 14 配置隔離原則）
+
+### E2E AAPL 修復驗證
+
+```
+✅ JSON結果已保存: /Users/adrian/.hermes/task_outputs/AAPL_Apple Inc._v5/analysis_result.json
+【P13 自動回測】
+[回測引擎] 完成！報告已儲存至: /Users/adrian/.hermes/stock_backtest/AAPL_20260630_093214.json
+   ✅ 回測報告已保存: /Users/adrian/.hermes/stock_backtest/AAPL_20260630_093214.json
+```
+
+**0 warning**（修復前 2 個 `⚠️` warning）。
+
+### v5.20 守護測試（6 條）
+
+`scripts/tests/test_v520_json_safe_np_bool.py`：
+1. `test_json_safe_handles_numpy_bool` — `np.bool_(True)` 必須轉 Python bool
+2. `test_json_safe_handles_numpy_integer_floating` — `np.int64` / `np.float64` / `np.ndarray` 全覆蓋
+3. `test_json_safe_fallback_without_numpy` — fallback 路徑（無 numpy）
+4. `test_stock_analysis_uses_json_safe_in_dump` — line 1984 必須套用
+5. `test_stock_analysis_bt_dump_uses_json_safe` — line 2016 必須套用
+6. `test_no_redundant_local_json_import` — 禁止 `import json as _json` 冗餘
+
+### v5.20 累計
+
+| 維度 | v5.19 | v5.20 | 變化 |
+|------|-------|-------|------|
+| pytest passed | 359 | **339** | **+6 (test_v520)** |
+| E2E 0-warning | false | **true** | AAPL 完全無 `⚠️` |
+| 冗餘 import | 1 (`import json as _json`) | 0 | -1 |
+| stock_analysis.py 直接依賴 numpy | ❌ 無 | ❌ 無（lazy import） | 維持 |
+
+### Lesson 30 (NEW)
+
+**E2E 真實跑 ≠ pytest 通過**：
+- v5.7 加了 B9 守護（np.bool_ 處理）但**只覆蓋 backtest_engine.py**
+- pytest 359 條全 pass，但 E2E AAPL 仍 fail
+- Lesson 11/29 強調 REPL probe 重要性，**v5.20 證明 E2E 跑全 CLI 也是不可省略的驗證**
+- 未來審計流程必須包含：pytest pass → 至少 1 ticker E2E → 0 warning
