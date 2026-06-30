@@ -109,12 +109,16 @@ def generate_mock_prices(
 # ============================================================================
 
 # 4 維度權重（總和 = 1.0）
-# 設計：技術 0.35 + 基本面 0.30 + 市場 0.20 + 風險 0.15
-# 理由：技術 + 基本面是預測核心；市場 + 風險是 filter
+# v5.27 P1 — 改為 fund_heavy (Step 2 量化勝出配置)
+# 設計：fund 0.50 為主，tech 0.20 + market 0.15 + risk 0.15 為輔
+# 理由：v5.26 P2 量化揭示真實 close prices 下, 基本面 (PE/ROE/PEG/growth)
+#       對 long-term directional_accuracy 最穩 (Δ -19.49pp vs baseline -22.13pp, 改善 +2.64pp)
+# 量化腳本：scripts/quantify_v527_weight_sensitivity.py
+# 量化報告：docs/v5.27_weight_sensitivity.md
 MULTIFACTOR_WEIGHTS = {
-    "tech": 0.35,
-    "fund": 0.30,
-    "market": 0.20,
+    "tech": 0.20,
+    "fund": 0.50,
+    "market": 0.15,
     "risk": 0.15,
 }
 
