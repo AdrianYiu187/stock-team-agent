@@ -103,3 +103,102 @@ def recompute_all_scores(fundamentals: dict[str, dict]) -> dict:
         "v5_11_3_scores": v511_scores,
         "std_quant": quantize_cross_market(v510_scores, v511_scores),
     }
+
+
+# v5.23 P5 — cap-zone warning API (Lesson #49 永久化)
+# Per docs/v5.23_roadmap.md §P5: live mode operator dashboard 需要
+# 「哪些 ticker 在 cap-zone 上撞牆」的自動 warning,不必每次手動跑 cap_coverage_report。
+
+# Cap-zone 判定規則 (per v5.22 P42 B-0 量化 + v5.22 Stage 5 保留):
+# 規則對應 stock_analysis.fund_score_multifactor 各 factor 的邊界
+_FUND_CAP_RULES = (
+    # (metric, rule_key, predicate(ticker_fund_dict) -> bool, threshold_value, is_by_design)
+    ("fund.pe",      "pe",      lambda f: f.get("pe", 0) > 500,     500, True),   # by-design clip
+    ("fund.roe",     "roe",     lambda f: f.get("roe", 0) > 3.0,    3.0, True),   # by-design clip
+    ("fund.peg",     "peg",     lambda f: (f.get("peg") or 0) > 25, 25.0, True),   # by-design clip (v5.22 P42 後)
+    ("fund.growth",  "growth",  lambda f: f.get("growth", 0) > 5.0, 5.0, True),   # by-design clip
+)
+
+
+def _detect_cap_zone_collisions(
+    fundamentals: dict[str, dict],
+    threshold: float = 0.005,
+) -> list[dict]:
+    """對每個 fund.* cap-zone 規則掃所有 ticker,回傳 colliding warnings。
+
+    Args:
+        fundamentals: {ticker: {pe, roe, peg, growth}, ...}
+        threshold: cap-zone 覆蓋率上限 (< threshold 視為 by-design,
+                    預設 0.5% per v5.22 Stage B-0)
+
+    Returns:
+        [{
+            'metric': 'fund.peg',
+            'n_in_cap_zone': int,
+            'coverage': float,
+            'is_by_design': bool,
+            'threshold_value': float,
+            'tickers': [ticker, ...],   # 實際撞 cap 的 ticker
+        }, ...]
+    """
+    total = max(len(fundamentals), 1)
+    warnings: list[dict] = []
+    for metric, _, predicate, threshold_value, is_by_design in _FUND_CAP_RULES:
+        tickers = sorted(t for t, f in fundamentals.items() if predicate(f))
+        if not tickers:
+            continue
+        coverage = len(tickers) / total
+        warnings.append({
+            "metric": metric,
+            "n_in_cap_zone": len(tickers),
+            "coverage": round(coverage, 4),
+            "is_by_design": is_by_design,
+            "threshold_value": threshold_value,
+            "tickers": tickers,
+        })
+    return warnings
+
+
+def recompute_all_scores_with_cap_warnings(
+    fundamentals: dict[str, dict],
+) -> dict:
+    """v5.23 P5 — Live mode operator dashboard cap-zone warning。
+
+    等同 recompute_all_scores() 但附加 cap-zone warning 結構。
+
+    Args:
+        fundamentals: {ticker: {pe, roe, peg, growth}, ...}
+
+    Returns:
+        {
+            'scores': <same as recompute_all_scores()>,
+            'cap_warnings': [
+                {
+                    'metric': 'fund.peg',
+                    'n_in_cap_zone': int,
+                    'coverage': float,
+                    'is_by_design': bool,
+                    'threshold_value': float,
+                    'tickers': [str, ...],
+                },
+                ...
+            ],
+            'summary': {
+                'total_warnings': int,
+                'warning_by_metric': {metric: int},
+                'live_unavailable_metrics': [],   # 預留 v5.24
+            },
+        }
+    """
+    scores = recompute_all_scores(fundamentals)
+    cap_warnings = _detect_cap_zone_collisions(fundamentals)
+    warning_by_metric = {w["metric"]: w["n_in_cap_zone"] for w in cap_warnings}
+    return {
+        "scores": scores,
+        "cap_warnings": cap_warnings,
+        "summary": {
+            "total_warnings": len(cap_warnings),
+            "warning_by_metric": warning_by_metric,
+            "live_unavailable_metrics": [],
+        },
+    }
