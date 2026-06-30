@@ -1720,3 +1720,108 @@ python3 scripts/verify_v515_closure.py
 35 new pytest cases (10 + 7 + 9 + 9)
 0 regression on existing 24 cross-market pytest
 0 regression on existing 374 total pytest
+
+## 審計 v5.22 — 真實 pitfall 收尾（2026-06-30）
+
+### 背景
+HEAD `7369c83` (v5.21 closure)，37/5 用戶提出「深度完整檢查最新版本所有代碼，並進行 debug、代碼簡化，死化碼硬代碼處理，計算深度驗證及準確率提升」。
+
+### Stage 0 量化結論（commit `98b275d`）
+對 stock-team-agent v5.21 完整 AST + REPL probe + 真實分布 (N=50000) 量化：
+
+| 候選 pitfall | 真實分布影響 | 處理 |
+|---|---|---|
+| `tech.ma50` ratio-based | 100% ma50 sweep flat | 🟡 **修 P41** |
+| `market.beta` floor 0.7 | **30.92%** 真實 cap-zone | 🟡 **修 P43** |
+| `fund.peg > 5` cap 0.10 | **8.19%** 真實 cap-zone | 🟡 **修 P42** |
+| `fund.roe > 3.0` cap | < 1% | ✅ 保留 |
+| `fund.pe > 500` cap | 0.19% | ✅ 保留 |
+| `fund.growth > 5` cap | 0% | ✅ 保留 |
+| `risk.volatility > 150` cap | 0.01% | ✅ 保留 |
+| 死代碼 | 0 real orphan | ✅ |
+| 硬編碼密鑰/URL | 0 | ✅ |
+
+**順手修**: `.gitignore` backups/ 規則、`backups/pre-v5.7-audit/test_stock_agent.py` 刪除（collection bug 修復）
+
+### 修法細節
+- **P41** (`d6377c4`): `tech.ma50_factor` ratio → absolute diff
+  - `ma50_pct = (price-ma50)/ma50`，symmetric 線性 `[-1, +1]` 映射 `[0.2, 0.8]`
+  - 真實場景復現 (price=$200 fixed): ma50=50,100,150 三值 0.6234 → 0.6534/0.6134/0.5734
+  - 敏感度: ±0.001 → ±0.05 (50x 提升)
+- **P42** (`a69a850`): `fund.peg > 5` cap 0.10 → exponential decay
+  - PEG ∈ [5, 25] 線性 `0.10 → 0.02`，>25 clip 0.0
+  - 3690.HK (PEG=28.72) score 0.3867 → 0.3667
+- **P43** (`6d2d6c1`): `market.beta > 1.2` floor 0.7 → continuous linear
+  - beta ∈ [1.0, 3.0] 線性 `1.0 → 0.40`，>3.0 clip 0.40
+  - NVDA (beta~1.8)、TSLA (beta~2.1) 現在 distinct
+
+### 量化改善表
+
+| 指標 | v5.21 | v5.22 | 改善 |
+|---|---|---|---|
+| 真實分布 cap-zone flat samples | 8.19% + 30.92% | 0% (P42+P43) | **-100%** |
+| tech.ma50 sensitivity (±20%) | < 0.001 | > 0.05 | **+50x** |
+| fund.peg > 5 distinct values | 1 | 20+ | **+20x** |
+| market.beta > 1.2 distinct values | 5 (floor 0.7 clip) | 20+ | **+4x** |
+| pytest | 374 | **385** | +11 (3 P41 + 4 P42 + 4 P43) |
+| 11 ticker entropy (signal health) | 1.5275-1.5848 | 1.5142-1.5848 | 維持健康 |
+| cross-market std v5.11.3 | 0.0654 | 0.0704 | +0.0050 (P42 cap rem) |
+| 0 regression | — | — | ✅ |
+
+### Verifier (Stage 9 closure)
+
+```bash
+$ /usr/bin/python3 -m pytest --tb=no -q
+385 passed, 1 warning in 9.55s   # 全部 +11 新 guard = 0 regression
+
+$ /usr/bin/python3 scripts/cross_market_real_yfinance_e2e.py --mode frozen
+11/11 ticker from hardcoded
+AAPL entropy 1.5776 / NVDA 1.5644 / 3690.HK 1.5142 / 600519.SS 1.5847
+```
+
+### Lessons Learned
+
+**Lesson 33 — Ratio-based parameter design pitfall**:
+- `price/ma50` ratio 在 ma50 << price 範圍比值梯度飽和
+- 改用 `(price - ma50) / ma50` absolute diff 保證真實相對差
+- 50x 敏感度提升
+
+**Lesson 34 — 真實分布 cap-zone coverage 必須量化**:
+- `if x > N: y = cap` 看起來正確,但實際影響取決於 N 在真實分布 percentile
+- Stage B-0 N=50000 量化排除 5 個 false-positive caps (roe/pe/growth/vol)
+- v5.13 P36c-5tier 教訓: 0% 量化改善 = 不修
+
+**Lesson 35 — Hardcoded fixture 必須同 commit 更新** (SOP-Pitfall-13):
+- P42 改了 fund.peg → 3690.HK fixture expectation 必須更新
+- 跨 std test 也必須 recompute
+- 不可藏在「後續修」commit
+
+### Chain Summary
+
+```
+v5.22 P43 (4): 6d2d6c1 fix(market.beta): floor 0.7 → continuous linear
+v5.22 P42 (3): a69a850 fix(fund.peg): cap 0.10 → continuous decay
+v5.22 P41 (2): d6377c4 fix(tech.ma50): ratio-based → absolute diff
+v5.22 Stage 0 (1): 98b275d feat(quantify): AST+REPL+真實分布 pitfall 量化
+v5.21 closure (0): 7369c83 docs(v5.21 closure)
+```
+
+### Files
+
+| File | Status | 用途 |
+|---|---|---|
+| `scripts/quantify_v522_tech_ma50_pitfall.py` | NEW | P41 量化腳本 |
+| `scripts/tests/test_v522_stage0_quantification.py` | NEW | 3 P41 guard (red→green) |
+| `scripts/tests/test_v522_fund_peg_linear.py` | NEW | 4 P42 guard |
+| `scripts/tests/test_v522_market_beta_linear.py` | NEW | 4 P43 guard |
+| `scripts/stock_analysis.py` | MOD | ma50_factor (P41) + peg_factor (P42) + beta_factor (P43) |
+| `scripts/tests/fixtures/tickers_fundamentals.json` | MOD | 3690.HK + std 期望 (P42 fixture update) |
+| `.gitignore` | MOD | backups/ 規則（修 pytest collection bug） |
+| `docs/v5.22_roadmap.md` | NEW | Stage 0 + 3 pitfall 候選清單 |
+| `AUDIT_CHANGELOG.md` | MOD | 本段 (v5.22 closure) |
+
+### Tag
+
+```
+audit-v5.22-2026-06-30 → <closure HEAD>
+```
