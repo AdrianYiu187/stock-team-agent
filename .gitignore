@@ -1,3 +1,6 @@
 .gitnexus
 __pycache__/
 *.pyc
+
+# v5.21 P1 — yfinance TTL fixture cache (live data, 不進 git)
+scripts/tests/fixtures/.cache/
