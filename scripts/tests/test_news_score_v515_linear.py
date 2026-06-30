@@ -48,12 +48,15 @@ class TestNewsScoreV515Linear:
         s5 = news_score_multifactor(news_count=60, region_count=5, source_diversity=3)
         assert s5 > s4, f"region=5 ({s5}) 應 > region=4 ({s4})"
 
-    def test_03_p43_region10_cap_at_095(self):
-        """P43: region_count≥10 達到 0.95 cap（保留保護）。"""
+    def test_03_p43_region10_progressive(self):
+        """v5.19 (N19) 修復: region_count 5→12 漸進至 1.0（不再 cap 0.95）
+        region=10 預期值 > 0.95 cap（真實公式給 ~0.589）
+        """
         s10 = news_score_multifactor(news_count=60, region_count=10, source_diversity=3)
-        # v5.15 P43: rc=10 cap=0.95; nc=60 → 0.95*60/120=0.475; sd=3 → 0.30+0.65*2/11=0.418
-        # score = 0.475*0.5 + 0.95*0.3 + 0.418*0.2 = 0.2375 + 0.285 + 0.0836 = 0.6061
-        assert 0.60 <= s10 <= 0.61, f"region=10 預期 ~0.606, got {s10}"
+        # v5.19: rc=10 線性 0.95→1.0 之間；nc=60 → 0.475; sd=3 → 0.418
+        # rc=10: 0.95 + 0.05 * (10-5)/7 = 0.95 + 0.0357 = 0.9857
+        # score = 0.475*0.5 + 0.9857*0.3 + 0.418*0.2 = 0.2375 + 0.2957 + 0.0836 = 0.6168
+        assert 0.61 <= s10 <= 0.62, f"region=10 預期 ~0.617, got {s10}"
 
     def test_04_p44_source8_greater_than_source6(self):
         """P44: source_diversity=8 > source_diversity=6（v5.14 兩者都 =0.95 cap）。"""
@@ -68,11 +71,13 @@ class TestNewsScoreV515Linear:
         # score = 0.475*0.5 + 0.56*0.3 + 0.95*0.2 = 0.2375 + 0.168 + 0.19 = 0.5955
         assert 0.59 <= s12 <= 0.60, f"sd=12 預期 ~0.5955, got {s12}"
 
-    def test_06_p44_source20_still_cap(self):
-        """P44: source_diversity=20 仍 = cap（保護極端輸入）。"""
+    def test_06_p44_source20_progressive(self):
+        """v5.19 修復: source_diversity 12→30 漸進（不再 cap 0.95）
+        source=20 應 > source=12（線性延伸）
+        """
         s12 = news_score_multifactor(news_count=60, region_count=2, source_diversity=12)
         s20 = news_score_multifactor(news_count=60, region_count=2, source_diversity=20)
-        assert abs(s20 - s12) < 1e-9, f"sd=20 ({s20}) 應 = sd=12 ({s12})"
+        assert s20 > s12, f"sd=20 ({s20}) 應 > sd=12 ({s12}) — N-series 修復"
 
     def test_07_all_three_factors_monotonic(self):
         """3 個因子同時增加 → score 上升。"""
@@ -80,13 +85,17 @@ class TestNewsScoreV515Linear:
         s_high = news_score_multifactor(news_count=80, region_count=4, source_diversity=9)
         assert s_high > s_low, f"low ({s_low}) 應 < high ({s_high})"
 
-    def test_08_news_count_cap_preserved(self):
-        """P41 不動：news_count≥120 仍 cap 0.95。"""
+    def test_08_news_count_progressive_to_500(self):
+        """v5.19 (N18) 修復: news_count 120→500 漸進至 1.0（不再 cap 0.95）"""
         s120 = news_score_multifactor(news_count=120, region_count=1, source_diversity=2)
+        s300 = news_score_multifactor(news_count=300, region_count=1, source_diversity=2)
         s500 = news_score_multifactor(news_count=500, region_count=1, source_diversity=2)
-        # nc≥120 cap=0.95; rc=1 → 0.30+0.65/3 = 0.517; sd=2 → 0.30+0.65/5 = 0.43
-        # score = 0.95*0.5 + 0.517*0.3 + 0.43*0.2 = 0.475 + 0.155 + 0.086 = 0.716
-        assert abs(s120 - s500) < 1e-9, f"nc=120 ({s120}) 應 = nc=500 ({s500})"
+        # 120→500 應漸進（s300 > s120, s500 > s300）
+        assert s300 > s120, f"nc=300 ({s300}) 應 > nc=120 ({s120})"
+        assert s500 > s300, f"nc=500 ({s500}) 應 > nc=300 ({s300})"
+        # 500+ 飽和
+        s1000 = news_score_multifactor(news_count=1000, region_count=1, source_diversity=2)
+        assert s1000 == s500, f"nc=1000 ({s1000}) 應 = nc=500 ({s500})"
 
     def test_09_region_zero_safe(self):
         """region_count=0 邊界不崩潰（v5.14 已經處理，v5.15 保留）。"""
