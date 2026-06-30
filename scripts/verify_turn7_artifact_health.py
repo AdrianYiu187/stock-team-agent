@@ -45,13 +45,13 @@ FIXES_VERIFIER = SCRIPTS / "verify_v511_fixes.py"
 # afd11be = golden 26 fixes
 # 用 fuzzy match：所有 v5.11+ / turn / fix / Stage / test 開頭的 commit 都接受
 # 避免每次 commit 都要更新 hash 列表
-# v5.19: 加入 v5.15/v5.16/v5.17/v5.18/v5.19 commit prefix
+# v5.20: 加入 v5.20 commit prefix（079bfd3 fix + 1473c31 docs）+ regex 範圍擴展 v5.20
 EXPECTED_HEAD_PATTERN = re.compile(
     r"(?:^a510bfd|^f858db7|^a2193f2|^2b33101|^ceb75d8|^d273f2a|^afd11be"
     r"|^fda7b1c|^97316a7|^ad04d4b|^729091d"
     r"|^2095bee|^4d6a7b2|^9e18150|^f519b0d|^5e53724|^85ef28c|^a6c40b3"
-    r"|^09c18b4|^f51f16b|^2fca096|^e864c0d"
-    r"|v5\.1[1-9]|fix\(turn|test\(v5\.1[1-9]|docs\(v5\.1[1-9]|Stage [0-9])"
+    r"|^09c18b4|^f51f16b|^2fca096|^e864c0d|^daa791c|^079bfd3|^1473c31"
+    r"|v5\.(?:1[1-9]|20)|fix\(turn|test\(v5\.(?:1[1-9]|20)|docs\(v5\.(?:1[1-9]|20)|Stage [0-9])"
 )
 
 # JSON artifacts
