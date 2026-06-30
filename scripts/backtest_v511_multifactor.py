@@ -123,12 +123,26 @@ MULTIFACTOR_WEIGHTS = {
 }
 
 
-# v5.28 P1 — 7D multifactor weights（candidate 量化勝出：full_7d_balanced_0_15）
-# 量化腳本：scripts/quantify_v528_7d_candidate.py
-# 量化結論：Pearson correlation 改善 +21.74pp（vs 4D baseline noise +13.14pp），淨 +8.6pp
-# 關鍵發現：macro 是最關鍵的 7D 維度（macro_alone: +21.41pp）
+# v5.30 P1 — 7D multifactor weights 升級為 cn_macro_heavy（v5.29 candidate 量化勝出）
+# 量化腳本：scripts/quantify_v529_per_region_sensitivity.py
+# 量化結論：Global cn_macro_heavy Pearson = +0.7730 (vs v5.28 full_7d_balanced +0.6549, 改善 +11.81pp)
+# 保留 FALLBACK 給 per-region 反轉情況使用（CN region 內 4D 反而最佳，sample=4 仍 noise 偏大）
+# 設計原則：v5.28 P1 path 仍可用, apply_7d_weights_v530(weights=FALLBACK) 明確呼叫即可
 # 向後相容：MULTIFACTOR_WEIGHTS (4D) 保留 fund_heavy 不變
 MULTIFACTOR_WEIGHTS_7D = {
+    "tech": 0.10,
+    "fund": 0.25,
+    "market": 0.10,
+    "risk": 0.05,
+    "sentiment": 0.15,
+    "news": 0.10,
+    "macro": 0.25,
+}
+
+# v5.30 P1 — 7D fallback weights（v5.28 P1 預設，保留供 per-region 反轉時手動切換）
+# 用途：CN region 4 ticker 樣本中 global_4d_fund_heavy (+0.9452) > cn_macro_heavy (+0.4111)
+# 呼叫方式：apply_7d_weights_v530(components, weights=MULTIFACTOR_WEIGHTS_7D_FALLBACK)
+MULTIFACTOR_WEIGHTS_7D_FALLBACK = {
     "tech": 0.18,
     "fund": 0.37,
     "market": 0.13,
@@ -322,6 +336,41 @@ def apply_7d_weights(components: Dict[str, float]) -> float:
     Helper for `quantify_v528_7d_candidate.py` 與 dashboard 7D card。
     """
     return compute_7d_multifactor(components)["composite"]
+
+
+def apply_7d_weights_v530(
+    components: Dict[str, float],
+    weights: Optional[Dict[str, float]] = None,
+) -> float:
+    """v5.30 P1 — 7D weights 套用 helper，支援明確指定 weights（預設 vs fallback）。
+
+    用途：
+    - 不傳 weights → 套用 MULTIFACTOR_WEIGHTS_7D（v5.30 預設 cn_macro_heavy）
+    - 傳 weights=MULTIFACTOR_WEIGHTS_7D_FALLBACK → 套用 v5.28 P1 預設 (full_7d_balanced)
+    - 傳自訂 weights dict → 套用該 dict（quantify 工具鏈使用）
+
+    Args:
+        components: 7 維度分數 dict, keys 必須包含
+            {tech, fund, market, risk, sentiment, news, macro}
+        weights: 7-key weights dict, 預設 None → 用 MULTIFACTOR_WEIGHTS_7D
+
+    Returns:
+        composite 純量（4 decimals）
+
+    Raises:
+        KeyError: components 缺任何 7D key，或 weights 有 components 沒有的 key
+    """
+    if weights is None:
+        weights = MULTIFACTOR_WEIGHTS_7D
+
+    missing_comp = set(weights.keys()) - set(components.keys())
+    if missing_comp:
+        raise KeyError(f"components 缺 7D 維度: {missing_comp}")
+
+    return round(
+        sum(float(components[k]) * float(weights[k]) for k in weights),
+        4,
+    )
 
 
 def composite_to_signal(composite: float) -> str:

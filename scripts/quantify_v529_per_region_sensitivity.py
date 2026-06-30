@@ -31,6 +31,7 @@ sys.path.insert(0, str(_REPO_ROOT))
 
 from backtest_v511_multifactor import (  # noqa: E402
     MULTIFACTOR_WEIGHTS_7D,
+    MULTIFACTOR_WEIGHTS_7D_FALLBACK,
     apply_7d_weights,
 )
 
@@ -56,14 +57,16 @@ REGION_MAP = {
 
 
 # Weight configs 候選 (sum=1.0 for 7 keys)
+# v5.30 P1 修正: global_7d_balanced_0_15 改用 MULTIFACTOR_WEIGHTS_7D_FALLBACK (v5.28 預設)
+# 而非 dict(MULTIFACTOR_WEIGHTS_7D) — 後者會隨 v5.30 升級而改變, 失去 baseline 意義
 WEIGHT_CONFIGS = {
     # Baseline 4D (fund_heavy) — 故意把 sentiment/news/macro 權重設 0 模擬 4D 路徑
     "global_4d_fund_heavy": {
         "tech": 0.20, "fund": 0.50, "market": 0.15, "risk": 0.15,
         "sentiment": 0.0, "news": 0.0, "macro": 0.0,
     },
-    # Global 7D (v5.28 量化勝出)
-    "global_7d_balanced_0_15": dict(MULTIFACTOR_WEIGHTS_7D),
+    # Global 7D (v5.28 量化勝出) — 用 FALLBACK 鎖定 v5.28 值
+    "global_7d_balanced_0_15": dict(MULTIFACTOR_WEIGHTS_7D_FALLBACK),
     # Region-tuned candidates
     "us_tech_heavy": {
         "tech": 0.30, "fund": 0.25, "market": 0.15, "risk": 0.10,

@@ -1,17 +1,21 @@
-"""v5.28 P1 — TDD red light: 鎖定 7D multifactor 整合層。
+"""v5.28 P1 → v5.30 P1 — TDD guards 鎖定 7D multifactor 整合層。
 
-依據 v5.28 candidate 量化 (`59db9b7` `quantify_v528_7d_candidate.py`)：
-full_7d_balanced_0_15 在真實 close prices 下 Pearson correlation
+v5.28 P1: full_7d_balanced_0_15 在真實 close prices 下 Pearson correlation
 改善 +21.74pp，比 4D baseline 噪聲 +13.14pp 淨改善 +8.6pp。
 
-TDD 流程：
+v5.30 P1: 升級為 cn_macro_heavy（v5.29 candidate 量化勝出）。
+Global cn_macro_heavy Pearson = +0.7730 vs v5.28 full_7d_balanced +0.6549, 改善 +11.81pp。
+保留 v5.28 預設為 FALLBACK 供 per-region 反轉情況使用。
+
+TDD 流程:
 - Commit 1 (red): 此檔 8 個 guards 預期 FAIL（compute_7d 與 MULTIFACTOR_WEIGHTS_7D 未實作）
 - Commit 2 (green): 寫 compute_7d_multifactor + 新常數 MULTIFACTOR_WEIGHTS_7D
 - Commit 3 (refactor): re-run quantify_v528 確認改善未衰減
+- v5.30 upgrade (red+green): 預設升級為 cn_macro_heavy, 新增 FALLBACK, TDD guards 跟進更新
 
-設計原則：
+設計原則:
 - MULTIFACTOR_WEIGHTS (4D) 保留 fund_heavy 不變 — 向後相容 v5.27 P1
-- MULTIFACTOR_WEIGHTS_7D 是新常數，7 個 key: tech/fund/market/risk/sentiment/news/macro
+- MULTIFACTOR_WEIGHTS_7D 是當前預設, 7 個 key: tech/fund/market/risk/sentiment/news/macro
 - compute_7d_multifactor() 直接接收 fixture 的 components dict (避免重算 sentiment/news/macro)
   因為 fixture `signal_distribution_per_ticker[t].components` 已含全部 7 維度分數
 """
@@ -28,8 +32,21 @@ _REPO_ROOT = _TESTS_DIR.parent.parent
 sys.path.insert(0, str(_SCRIPTS_DIR))
 
 
-# v5.28 full_7d_balanced_0_15 目標值（candidate 量化勝出配置）
+# v5.30 P1 當前預設（cn_macro_heavy，v5.29 candidate 量化勝出）
+# 量化結論：Global cn_macro_heavy Pearson = +0.7730 (vs v5.28 +0.6549, 改善 +11.81pp)
+# 呼叫方式：compute_7d_multifactor() / apply_7d_weights() 直接用此預設
 EXPECTED_7D_BALANCED = {
+    "tech": 0.10,
+    "fund": 0.25,
+    "market": 0.10,
+    "risk": 0.05,
+    "sentiment": 0.15,
+    "news": 0.10,
+    "macro": 0.25,
+}
+
+# v5.28 P1 預設（保留為 FALLBACK）
+EXPECTED_7D_BALANCED_FALLBACK = {
     "tech": 0.18,
     "fund": 0.37,
     "market": 0.13,
@@ -71,6 +88,48 @@ class Test7DWeightsConstant(unittest.TestCase):
         from backtest_v511_multifactor import MULTIFACTOR_WEIGHTS_7D
         total = sum(MULTIFACTOR_WEIGHTS_7D.values())
         self.assertAlmostEqual(total, 1.0, places=4)
+
+    def test_weights_7d_fallback_constant_exists(self):
+        """M-7D1.5: v5.30 P1 新增 FALLBACK 常數（v5.28 預設值）"""
+        from backtest_v511_multifactor import MULTIFACTOR_WEIGHTS_7D_FALLBACK
+        self.assertIsInstance(MULTIFACTOR_WEIGHTS_7D_FALLBACK, dict)
+        self.assertEqual(
+            set(MULTIFACTOR_WEIGHTS_7D_FALLBACK.keys()),
+            {"tech", "fund", "market", "risk", "sentiment", "news", "macro"},
+        )
+
+    def test_weights_7d_fallback_values(self):
+        """M-7D1.6: FALLBACK 值鎖定 v5.28 P1 預設"""
+        from backtest_v511_multifactor import MULTIFACTOR_WEIGHTS_7D_FALLBACK
+        for k, v in EXPECTED_7D_BALANCED_FALLBACK.items():
+            self.assertAlmostEqual(
+                MULTIFACTOR_WEIGHTS_7D_FALLBACK[k], v, places=4,
+                msg=f"FALLBACK[{k}]: expected {v}, got {MULTIFACTOR_WEIGHTS_7D_FALLBACK.get(k)}",
+            )
+
+    def test_weights_7d_default_differs_from_fallback(self):
+        """M-7D1.7: DEFAULT 與 FALLBACK 必須不同（確保 v5.30 升級有實際效果）"""
+        from backtest_v511_multifactor import (
+            MULTIFACTOR_WEIGHTS_7D,
+            MULTIFACTOR_WEIGHTS_7D_FALLBACK,
+        )
+        self.assertNotEqual(
+            MULTIFACTOR_WEIGHTS_7D, MULTIFACTOR_WEIGHTS_7D_FALLBACK,
+            "DEFAULT == FALLBACK, v5.30 升級無效",
+        )
+
+    def test_apply_7d_weights_v530_helper_exists(self):
+        """M-7D1.8: v5.30 P1 新增 apply_7d_weights_v530(components, weights=None) helper"""
+        from backtest_v511_multifactor import apply_7d_weights_v530
+        components = {
+            "tech": 0.5, "fund": 0.6, "market": 0.7, "risk": 0.4,
+            "sentiment": 0.55, "news": 0.3, "macro": 0.65,
+        }
+        # 預設 = MULTIFACTOR_WEIGHTS_7D
+        r_default = apply_7d_weights_v530(components)
+        from backtest_v511_multifactor import MULTIFACTOR_WEIGHTS_7D
+        expected = round(sum(components[k] * MULTIFACTOR_WEIGHTS_7D[k] for k in components), 4)
+        self.assertAlmostEqual(r_default, expected, places=4)
 
 
 class Test7DMultifactorCompute(unittest.TestCase):

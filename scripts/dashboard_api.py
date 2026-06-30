@@ -36,6 +36,7 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 from backtest_v511_multifactor import (  # noqa: E402
     MULTIFACTOR_WEIGHTS,
     MULTIFACTOR_WEIGHTS_7D,
+    MULTIFACTOR_WEIGHTS_7D_FALLBACK,
     apply_7d_weights,
     run_cross_market_comparison,
 )
@@ -147,19 +148,21 @@ def config() -> dict:
 
     Response shape:
         {
-            "weights_4d": {...},       # fund_heavy (4 keys)
-            "weights_7d": {...},       # full_7d_balanced_0_15 (7 keys, v5.28 NEW)
+            "weights_4d": {...},              # fund_heavy (4 keys)
+            "weights_7d": {...},              # cn_macro_heavy (7 keys, v5.30 NEW default)
+            "weights_7d_fallback": {...},     # full_7d_balanced_0_15 (v5.28 預設, v5.30 NEW fallback)
             "close_source_default": "real",
             "available_close_sources": ["mock", "real"],
-            "version": "5.28.0"
+            "version": "5.30.0"
         }
     """
     return {
         "weights_4d": dict(MULTIFACTOR_WEIGHTS),
         "weights_7d": dict(MULTIFACTOR_WEIGHTS_7D),
+        "weights_7d_fallback": dict(MULTIFACTOR_WEIGHTS_7D_FALLBACK),
         "close_source_default": "real",
         "available_close_sources": ["mock", "real"],
-        "version": "5.28.0",
+        "version": "5.30.0",
     }
 
 

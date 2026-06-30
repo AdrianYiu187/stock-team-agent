@@ -146,17 +146,27 @@ class TestDashboard7DEndpoint(unittest.TestCase):
     """v5.28 P2 — /api/cross_market_7d + /api/config weights_7d 鎖定"""
 
     def test_config_exposes_weights_7d(self):
-        """A14: GET /api/config 含 weights_7d = full_7d_balanced_0_15"""
+        """A14: GET /api/config 含 weights_7d = v5.30 預設 cn_macro_heavy
+        + weights_7d_fallback = v5.28 預設 full_7d_balanced_0_15"""
         r = client.get("/api/config")
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertIn("weights_7d", data)
         w = data["weights_7d"]
         self.assertEqual(set(w.keys()), {"tech", "fund", "market", "risk", "sentiment", "news", "macro"})
-        self.assertAlmostEqual(w["tech"], 0.18, places=4)
-        self.assertAlmostEqual(w["fund"], 0.37, places=4)
-        self.assertAlmostEqual(w["macro"], 0.05, places=4)
+        # v5.30 預設 cn_macro_heavy
+        self.assertAlmostEqual(w["tech"], 0.10, places=4)
+        self.assertAlmostEqual(w["fund"], 0.25, places=4)
+        self.assertAlmostEqual(w["macro"], 0.25, places=4)
         self.assertAlmostEqual(sum(w.values()), 1.0, places=4)
+        # v5.30 新增 FALLBACK
+        self.assertIn("weights_7d_fallback", data)
+        wf = data["weights_7d_fallback"]
+        self.assertAlmostEqual(wf["tech"], 0.18, places=4)
+        self.assertAlmostEqual(wf["fund"], 0.37, places=4)
+        self.assertAlmostEqual(sum(wf.values()), 1.0, places=4)
+        # 預設與 FALLBACK 必須不同
+        self.assertNotEqual(w, wf, "weights_7d == weights_7d_fallback, v5.30 升級無效")
 
     def test_config_exposes_weights_4d(self):
         """A15: GET /api/config 改用 weights_4d key (v5.27 向後相容 breaking)"""
