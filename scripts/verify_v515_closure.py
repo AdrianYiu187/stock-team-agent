@@ -279,6 +279,30 @@ def main() -> int:
         print(f"⚠️  signal distribution 量化例外: {e}")
         failures += 1
 
+    # ===== v5.20 P53: E2E smoke gate (Lesson 30) =====
+    # Lesson 30：pytest pass ≠ E2E pass（v5.7 B9 修復只覆蓋 backtest_engine.py
+    # 內部 JSON dump，stock_analysis.py 兩處 dump 漏套 → pytest 333 pass 但
+    # AAPL CLI 仍 fail）。E2E smoke 把 CLI 0-warning 變成不可繞過的 gate。
+    print("\n⚠️  跑 E2E smoke（Lesson 30 gate）...")
+    e2e_log = Path("/tmp/stock_team_e2e_smoke_audit.log")
+    e2e_result = subprocess.run(
+        "bash scripts/e2e_smoke.sh",
+        shell=True, cwd=REPO_ROOT, capture_output=True, text=True, timeout=240,
+    )
+    e2e_pass = (
+        e2e_result.returncode == 0
+        and "E2E smoke PASS" in e2e_result.stdout
+    )
+    if not check(
+        "16. E2E smoke (AAPL CLI 0-warning)",
+        e2e_pass,
+        f"exit={e2e_result.returncode}, log={e2e_log}",
+    ):
+        failures += 1
+        # 失敗時保留 log 到固定路徑供 debug
+        if e2e_log.exists():
+            print(f"   e2e log tail: {e2e_log.read_text()[-500:]}")
+
     # 總結
     print(f"\n{'='*50}")
     print(f"Stage 9 v5.15 closure: {failures} failure(s)")
