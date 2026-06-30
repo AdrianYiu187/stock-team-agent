@@ -2131,3 +2131,51 @@ v5.31 P0 寫的 `scripts/audit_v531_dead_code.py` 是一次性 audit script, 換
 ```
 audit-v5.32-2026-06-30 → ff09b20 (closure HEAD, 1 commit ahead of v5.31 green) [本次補 v5.32 段後]
 ```
+
+---
+
+## v5.33 — Lesson #61/#62: audit chain 自維護 + Audit Tool Hardening（2026-07-01）
+
+### 動機
+v5.32 closure 列了 6 個 deferred 項目，本 cycle 關閉其中 3 個 (`--only` CLI / noise-filter / framework-filter) + 1 個工具鏈 lesson (test-guard 版本追蹤)。D2 量化前必須先量化：「23 個真實跨檔 hardcode」其實是單檔單函數不跨檔 — Rule 11 修正先前誤判，跳過大重構。
+
+### Commits Ahead of v5.32 Green (`4be6117`)
+
+| Commit | Stage | 內容 | pytest |
+|--------|-------|------|--------|
+| `4be6117` | v5.33 規劃 | `docs/v5.33_roadmap.md` HK Pearson ≥0.7 + audit tool hardening 路線 | 561 |
+| `1142f92` | v5.32 補 | 刪 `fetch_all` dead code (-19 行) | 561 |
+| `ac7229f` | D2 (a) Lesson #61 | test-guard 預設 iteration v5.31→v5.32 (6/6 green) | 561 |
+| `c65ac47` | D2 (b) Lesson #62 | `--only` + `--noise-filter` + `--framework-filter` + 3 TDD | 564 |
+
+### D2 (b) 量化（Lesson #62 重點）
+
+| Mode | Total | Δ vs baseline |
+|------|-------|---------------|
+| Baseline（無 flag） | 151 findings | — |
+| `--noise-filter --framework-filter` | **114 findings** | **-37 (-24.5%)** |
+| `--only a --noise-filter` (CI gate) | 52 findings | 單 category 跑 |
+
+### Lesson #61 NEW
+audit chain 預設 iteration **必須追蹤最新閉環版本**，不可凍結在寫入時的版本。否則 chain 自己會隨時間失效 (`test_4` 失敗就是症狀)。每個新 closure 必 bump 預設值。
+
+### Lesson #62 NEW
+Audit tool hardening 三維度 — `--only` (granular) + `--noise-filter` (CLI scripts) + `--framework-filter` (FastAPI/pytest)。降幅量化：**-24.5%**（151→114）。CI gate 可只跑關鍵 category。
+
+### 本 cycle 跳過（Rule 11 透明）
+1. **Item 2A `_paths.py` 13 檔抽 helper** — REPO_ROOT 有 2 種 `.parent.parent` vs `.parent.parent.parent` 深度，抽 helper 反而複雜化（Rule 3 精準修改禁止）
+2. **Item 2B `_signal_labels.py` 5 級 threshold 提取** — 全在 `stock_analysis.py:1800` 單檔單函數，無跨檔 DRY 問題（先前 audit 報告「23 個跨檔」係量化誤判）
+
+### 已解決 / 已釋放 deferred 項目
+- ✅ Deferred #1 `fetch_all` 刪除 (`1142f92`)
+- ✅ Deferred #2 `--only` CLI flag (`c65ac47`)
+- ✅ Deferred #3 HARDCODE-DUP noise-filter (`c65ac47`, -24.5% 量化)
+- ✅ Deferred #6 DEAD-CODE framework-filter (`c65ac47`, FastAPI false-positive 過濾)
+- ⏸ Deferred #4 cap-zone threshold 提取 — 跳過（單檔無跨檔問題）
+- ⏸ Deferred #5 HK Pearson > 0.7 — 進入 v5.33 Stage 2 (詳細見 `docs/v5.33_roadmap.md`)
+
+### Tag
+
+```
+audit-v5.32-2026-06-30 → c65ac47 (closure HEAD, 4 commits ahead of v5.32 green) [本次補 v5.33 段後]
+```

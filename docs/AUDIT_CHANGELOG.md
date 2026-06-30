@@ -510,3 +510,94 @@
 | SHA | Description |
 |-----|-------------|
 | `ff09b20` | feat(v5.32): Lesson #58 promoted to audit_v53x_dead_code.py chain |
+
+---
+
+## v5.33 — Lesson #61/#62: audit chain 自維護 + Audit Tool Hardening (2026-07-01)
+
+**業務動機**: v5.32 closure 列了 6 個 deferred 項目，本 cycle 關閉其中 3 個（`--only` CLI / noise-filter / framework-filter）+ 1 個工具鏈 lesson (test-guard 版本追蹤)。D2 量化前先量化，發現「23 個真實跨檔 hardcode」係先前誤判（5 級 threshold 全在 `stock_analysis.py:1800` 單檔單函數）→ 跳過大重構，遵循 Rule 3（精準修改）。
+
+### Phase 1 — Test-Guard Self-Maintenance (D2 a / Lesson #61)
+
+| Commit | Files | Δ |
+|--------|-------|---|
+| `ac7229f` | `scripts/tests/test_v531_p3_audit_chain.py` | 5 處 v5.31→v5.32 + docstring 更新 + Lesson #61 rationale |
+
+**問題**: audit chain 預設 iteration 凍結在 v5.31（chain 寫入時的版本），但每個 closure 後應追蹤**最新閉環版本**，否則 chain 自己隨時間失效。
+
+**症狀**: `test_audit_detects_real_changelog_drift` 在 v5.32 closure 後 fail，因其斷言 v5.31 是最新版本。
+
+**修正**: 預設 iteration 從 `"v5.31"` bump 至 `"v5.32"`，docstring 註明 Lesson #61 rationale。
+
+**驗證**: pytest `test_v531_p3_audit_chain.py` 6/6 green (was 5/6)。
+
+### Phase 2 — Audit Tool Hardening (D2 b / Lesson #62)
+
+| Commit | Files | Δ |
+|--------|-------|---|
+| `c65ac47` | `scripts/audit_v53x_dead_code.py` + `scripts/tests/test_v531_p3_audit_chain.py` | +106 / -9 |
+
+**3 個新 CLI flags**:
+1. **`--only {a\|b\|c\|d\|e}`** — 只跑單一 category (CI 可掛關鍵 gate)
+2. **`--noise-filter`** — (a) hardcode 跳過 `scripts/{verify,check,audit,upgrade,run,quantify}_*.py` (CLI 入口字面值是有意的)
+3. **`--framework-filter`** — (c) magic 跳過含 `pytest.main` / `FastAPI(` / `from fastapi` / `from pydantic` 的檔案 (框架偽陽性)
+
+**量化**:
+| Mode | Total | Δ vs baseline |
+|------|-------|---------------|
+| Baseline | 151 findings | — |
+| `--noise-filter --framework-filter` | 114 findings | **-37 (-24.5%)** |
+| `--only a --noise-filter` | 52 findings | 單 category |
+
+**新增 TDD guards** (3 個):
+- `test_audit_only_flag_isolates_single_category` — 驗證 `--only b` 只跑 (b)
+- `test_audit_noise_filter_reduces_hardcode_findings` — 驗證降幅
+- `test_audit_framework_filter_reduces_magic_findings` — 驗證 clean run
+
+**驗證**: pytest `test_v531_p3_audit_chain.py` 9/9 green (was 6/6, +3 new TDD)。
+
+### 本 cycle 跳過項目 (Rule 11 透明)
+
+| Item | 原因 | 依據 |
+|------|------|------|
+| `_paths.py` 13 檔抽 helper (Item 2A) | REPO_ROOT 有 2 種 `.parent.parent` vs `.parent.parent.parent` 深度差異, 抽 helper 反而複雜化 | Rule 3 精準修改 |
+| 5 級 signal threshold 提取 (Item 2B) | 全在 `stock_analysis.py:1800` 單檔單函數內, 無跨檔 DRY 問題 | 修正先前 audit 量化誤判 |
+
+### Deferred Progress (v5.32 → v5.33)
+
+| Item | v5.32 狀態 | v5.33 結果 |
+|------|-----------|-----------|
+| 1. `fetch_all` 刪除 | Deferred LOW | ✅ `1142f92` (順手 commit) |
+| 2. `--only` CLI flag | Deferred LOW | ✅ `c65ac47` |
+| 3. HARDCODE-DUP noise-filter | Deferred MEDIUM | ✅ `c65ac47` (-24.5%) |
+| 4. cap-zone threshold 提取 | Deferred MEDIUM | ⏸ 跳過（單檔無跨檔） |
+| 5. HK Pearson > 0.7 | Deferred MEDIUM | ⏸ 進入 v5.33 Stage 2 (`docs/v5.33_roadmap.md`) |
+| 6. DEAD-CODE framework-filter | Deferred LOW | ✅ `c65ac47` (FastAPI false-positive 過濾) |
+
+### Commits Ahead of v5.32 Green (`4be6117`)
+
+| SHA | Description |
+|-----|-------------|
+| `ac7229f` | test(v5.33): upgrade audit chain default iteration v5.31 → v5.32 (Lesson #61) |
+| `c65ac47` | feat(v5.33 audit tool): --only, --noise-filter, --framework-filter (Lesson #62) |
+| `1142f92` | v5.32: remove dead code fetch_all (yfinance_fundamentals) |
+| `4be6117` | docs(v5.33 roadmap): HK Pearson >=0.7 + audit tool hardening plan |
+
+### Lessons New
+
+**Lesson #61 — audit chain 必須自維護**:
+- 預設 iteration 永遠追蹤**最新閉環版本**，不可凍結在初始版本
+- 每個 closure commit 必 bump 預設值
+- 否則 chain 隨時間失效 (failing test_4 是早期症狀)
+
+**Lesson #62 — audit tool hardening 三維度**:
+- `--only` 提供 granular 控制 (CI gate 可只掛關鍵)
+- `--noise-filter` 處理 CLI-script false-positive (容差/format precision)
+- `--framework-filter` 處理 framework-aware false-positive (FastAPI decorator)
+- 綜合降幅量化：**-24.5%** (151→114)
+
+### Tag
+
+```
+audit-v5.32-2026-06-30 → c65ac47 (closure HEAD, 4 commits ahead of v5.32 green) [本次補 v5.33 段後]
+```
