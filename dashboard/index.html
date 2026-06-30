@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stock Team Agent — Operator Dashboard v5.27</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a1f2e;
+      --card-hover: #232a3d;
+      --border: #2a3142;
+      --text: #e4e7eb;
+      --text-dim: #8b95a7;
+      --buy: #10b981;
+      --hold: #f59e0b;
+      --sell: #ef4444;
+      --high-risk: #ef4444;
+      --low-risk: #10b981;
+      --medium-risk: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      min-height: 100vh;
+    }
+    header {
+      max-width: 1400px;
+      margin: 0 auto 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+    .subtitle {
+      color: var(--text-dim);
+      font-size: 13px;
+      margin-top: 4px;
+    }
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    .toggle {
+      display: flex;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .toggle button {
+      background: transparent;
+      color: var(--text-dim);
+      border: none;
+      padding: 8px 16px;
+      cursor: pointer;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    .toggle button.active {
+      background: var(--text);
+      color: var(--bg);
+    }
+    .summary {
+      max-width: 1400px;
+      margin: 0 auto 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .stat-label {
+      color: var(--text-dim);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: 600;
+      margin-top: 4px;
+    }
+    .grid {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      transition: all 0.2s;
+    }
+    .card:hover {
+      background: var(--card-hover);
+      transform: translateY(-2px);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .ticker {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .risk-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 500;
+    }
+    .risk-high { background: rgba(239, 68, 68, 0.2); color: var(--high-risk); }
+    .risk-low { background: rgba(16, 185, 129, 0.2); color: var(--low-risk); }
+    .risk-medium { background: rgba(245, 158, 11, 0.2); color: var(--medium-risk); }
+    .signal-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .signal-bar {
+      display: flex;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .signal-buy { background: var(--buy); }
+    .signal-hold { background: var(--hold); }
+    .signal-sell { background: var(--sell); }
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .score-label { color: var(--text-dim); }
+    .score-value { font-weight: 500; }
+    .components {
+      margin-top: 8px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 4px;
+      font-size: 11px;
+    }
+    .component {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 4px;
+      color: var(--text-dim);
+    }
+    .component-value { color: var(--text); }
+    footer {
+      max-width: 1400px;
+      margin: 24px auto 0;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 12px;
+    }
+    .loading {
+      text-align: center;
+      padding: 48px;
+      color: var(--text-dim);
+    }
+    .error {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid var(--high-risk);
+      padding: 16px;
+      border-radius: 8px;
+      max-width: 600px;
+      margin: 48px auto;
+      color: var(--high-risk);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Stock Team Agent — Operator Dashboard</h1>
+      <div class="subtitle">v5.27 · 11 tickers · real close prices · fund_heavy weights</div>
+    </div>
+    <div class="controls">
+      <div class="toggle">
+        <button class="active" onclick="setCloseSource('real')">real</button>
+        <button onclick="setCloseSource('mock')">mock</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="summary" class="summary"></div>
+  <div id="grid" class="grid">
+    <div class="loading">載入 fixture 資料中…</div>
+  </div>
+
+  <footer>
+    <div>Source: <code>scripts/tests/fixtures/tickers_fundamentals.json</code></div>
+    <div style="margin-top:4px;">v5.26 Lesson #54 — close_source=real 為 score-based 決策標準</div>
+  </footer>
+
+  <script>
+    // HIGH-risk tickers (per v5.26 business decision brief)
+    const HIGH_RISK_TICKERS = new Set([
+      'AAPL',         // +34.76pp diff
+      'GOOGL',        // -59.47pp diff
+      '000333.SZ',    // -90.88pp diff
+      '000858.SZ',    // -22.81pp diff
+      '600519.SS',    // -20.93pp diff
+    ]);
+
+    let currentData = null;
+    let currentSource = 'real';
+
+    async function loadFixture() {
+      try {
+        // 嘗試 fetch（file:// 會失敗 → fallback）
+        const res = await fetch('../scripts/tests/fixtures/tickers_fundamentals.json');
+        if (!res.ok) throw new Error('fetch failed');
+        currentData = await res.json();
+      } catch (e) {
+        // Fallback: 用 inline data
+        document.getElementById('grid').innerHTML =
+          '<div class="error">無法直接讀取 fixture (file:// 限制)。請用 HTTP server:' +
+          '<br><br><code>cd ~/stock-team-agent && python -m http.server 8080</code>' +
+          '<br><br>然後開啟 <a href="http://localhost:8080/dashboard/index.html" style="color:#10b981">http://localhost:8080/dashboard/index.html</a></div>';
+        return;
+      }
+      render();
+    }
+
+    function setCloseSource(src) {
+      currentSource = src;
+      document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+      // close_source 切換需要重新跑 backtest — 這裡用目前 fixture 數據
+      // 完整切換需串接 run_cross_market_comparison() API
+      render();
+    }
+
+    function classifyRisk(ticker) {
+      if (HIGH_RISK_TICKERS.has(ticker)) return 'high';
+      return 'low';
+    }
+
+    function renderSummary() {
+      const sd = currentData.signal_distribution_per_ticker;
+      const tickers = Object.keys(sd);
+      const buyCount = tickers.filter(t => sd[t].majority === 'buy').length;
+      const holdCount = tickers.filter(t => sd[t].majority === 'hold').length;
+      const sellCount = tickers.filter(t => sd[t].majority === 'sell').length;
+      const highRiskCount = tickers.filter(t => HIGH_RISK_TICKERS.has(t)).length;
+      const meanScore = (tickers.reduce((a, t) => a + sd[t].final_score, 0) / tickers.length).toFixed(4);
+
+      document.getElementById('summary').innerHTML = `
+        <div class="stat">
+          <div class="stat-label">Tickers</div>
+          <div class="stat-value">${tickers.length}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">BUY Signals</div>
+          <div class="stat-value" style="color:var(--buy)">${buyCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">HOLD Signals</div>
+          <div class="stat-value" style="color:var(--hold)">${holdCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">SELL Signals</div>
+          <div class="stat-value" style="color:var(--sell)">${sellCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">HIGH-Risk</div>
+          <div class="stat-value" style="color:var(--high-risk)">${highRiskCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Mean final_score</div>
+          <div class="stat-value">${meanScore}</div>
+        </div>
+      `;
+    }
+
+    function renderCard(ticker, data) {
+      const risk = classifyRisk(ticker);
+      const c = data.components;
+      return `
+        <div class="card">
+          <div class="card-header">
+            <div class="ticker">${ticker}</div>
+            <div class="risk-badge risk-${risk}">${risk === 'high' ? '🔴 HIGH' : '🟢 LOW'}</div>
+          </div>
+          <div class="signal-row">
+            <span>BUY ${(data.buy_ratio*100).toFixed(1)}%</span>
+            <span>HOLD ${(data.hold_ratio*100).toFixed(1)}%</span>
+            <span>SELL ${(data.sell_ratio*100).toFixed(1)}%</span>
+          </div>
+          <div class="signal-bar">
+            <div class="signal-buy" style="width:${data.buy_ratio*100}%"></div>
+            <div class="signal-hold" style="width:${data.hold_ratio*100}%"></div>
+            <div class="signal-sell" style="width:${data.sell_ratio*100}%"></div>
+          </div>
+          <div class="score-row">
+            <span class="score-label">majority</span>
+            <span class="score-value" style="color:var(--${data.majority === 'buy' ? 'buy' : data.majority === 'sell' ? 'sell' : 'hold'})">${data.majority.toUpperCase()}</span>
+          </div>
+          <div class="score-row">
+            <span class="score-label">final_score</span>
+            <span class="score-value">${data.final_score.toFixed(4)}</span>
+          </div>
+          <div class="score-row">
+            <span class="score-label">signal_entropy</span>
+            <span class="score-value">${data.signal_entropy.toFixed(4)}</span>
+          </div>
+          <div class="components">
+            <div class="component"><span>market</span><span class="component-value">${c.market.toFixed(3)}</span></div>
+            <div class="component"><span>tech</span><span class="component-value">${c.technical.toFixed(3)}</span></div>
+            <div class="component"><span>fund</span><span class="component-value">${c.fundamental.toFixed(3)}</span></div>
+            <div class="component"><span>risk</span><span class="component-value">${c.risk.toFixed(3)}</span></div>
+            <div class="component"><span>sentiment</span><span class="component-value">${c.sentiment.toFixed(3)}</span></div>
+            <div class="component"><span>news</span><span class="component-value">${c.news.toFixed(3)}</span></div>
+            <div class="component"><span>macro</span><span class="component-value">${c.macro.toFixed(3)}</span></div>
+          </div>
+        </div>
+      `;
+    }
+
+    function render() {
+      if (!currentData || !currentData.signal_distribution_per_ticker) return;
+      renderSummary();
+      const sd = currentData.signal_distribution_per_ticker;
+      const tickers = Object.keys(sd).sort();
+      const html = tickers.map(t => renderCard(t, sd[t])).join('');
+      document.getElementById('grid').innerHTML = html;
+    }
+
+    // 啟動
+    loadFixture();
+  </script>
+</body>
+</html>
