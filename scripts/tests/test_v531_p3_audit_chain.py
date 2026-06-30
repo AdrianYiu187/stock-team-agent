@@ -67,14 +67,18 @@ class TestAuditV53XChain(unittest.TestCase):
 
     def test_audit_detects_real_changelog_drift(self):
         """The audit must NOT confuse sub-headings like '### 19-Commit v5.11' with
-        top-level versions (Lesson #58 cross-line regression)."""
-        # v5.32 should be the latest in AUDIT_CHANGELOG.md after closure
-        r = _run_audit("v5.32")
+        top-level versions (Lesson #58 cross-line regression).
+
+        v5.33 upgrade: point at v5.33 (latest). v5.32 would now FAIL because
+        the latest CHANGELOG entry is v5.33 — that's a legit closure boundary,
+        not a Lesson #58 regression. (Lesson #61 self-maintenance: bump guard.)"""
+        # v5.33 should be the latest in AUDIT_CHANGELOG.md after closure
+        r = _run_audit("v5.33")
         # If we incorrectly captured '19' as the latest (old bug), we'd see
-        # CHANGELOG-DRIFT even though v5.32 is present
+        # CHANGELOG-DRIFT even though v5.33 is present
         output = r.stdout
-        # There should be no 'CHANGELOG-DRIFT-AUDIT_CHANGELOG.md' for v5.32
-        # (since docs/AUDIT_CHANGELOG.md has v5.32 already)
+        # There should be no 'CHANGELOG-DRIFT-AUDIT_CHANGELOG.md' for v5.33
+        # (since docs/AUDIT_CHANGELOG.md has v5.33 already)
         self.assertNotIn(
             "CHANGELOG-DRIFT-AUDIT_CHANGELOG.md",
             output.split("[HIGH]")[1].split("[MEDIUM]")[0] if "[HIGH]" in output else "",
@@ -83,15 +87,15 @@ class TestAuditV53XChain(unittest.TestCase):
 
     def test_audit_finds_no_critical_when_clean(self):
         """When targeting an iteration that's been properly closed, CRITICAL count
-        must be zero. v5.32 is closed → 0 CRITICAL expected."""
-        r = _run_audit("v5.32")
+        must be zero. v5.33 is closed → 0 CRITICAL expected."""
+        r = _run_audit("v5.33")
         output = r.stdout
         # Find CRITICAL section
         crit_section = ""
         if "[CRITICAL]" in output:
             crit_section = output.split("[CRITICAL]")[1].split("[")[0]
         self.assertIn("0", crit_section.split("\n")[0],
-                      f"v5.32 should have 0 CRITICAL findings: {crit_section[:200]}")
+                      f"v5.33 should have 0 CRITICAL findings: {crit_section[:200]}")
 
     def test_audit_strict_mode_escalates_medium(self):
         """--strict should cause MEDIUM findings to fail (exit 1)."""
