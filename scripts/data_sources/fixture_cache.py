@@ -103,7 +103,10 @@ def get_fundamentals(
     """
     if fetcher is None:
         # Lazy import — pytest with --frozen-fixtures 不需 yfinance
-        from scripts.data_sources.yfinance_fundamentals import fetch_one
+        # v5.25 P0 fix — `from data_sources...` 對齊 codebase 風格 (three_tier_loader L61)
+        # 舊 `from scripts.data_sources...` 需要 scripts 是 top-level package (沒 __init__.py + sys.path 沒有 repo root)
+        # 在 CLI 環境 (`python scripts/cross_market_real_yfinance_e2e.py`) 只有 scripts/ 在 sys.path,故失敗。
+        from data_sources.yfinance_fundamentals import fetch_one
         fetcher = fetch_one
 
     ttl_hours = _get_ttl_hours()
