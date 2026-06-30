@@ -1,4 +1,4 @@
-"""v5.31 P3 (Lesson #58 promotion) — audit_v53x_dead_code.py TDD guards.
+"""v5.31 P3 / v5.33 (Lesson #58 promotion) — audit_v53x_dead_code.py TDD guards.
 
 Promote the v5.31 one-off audit into a reusable chain. 6 guards:
 
@@ -8,6 +8,9 @@ Promote the v5.31 one-off audit into a reusable chain. 6 guards:
   4. test_audit_detects_real_changelog_drift
   5. test_audit_finds_no_critical_when_clean
   6. test_audit_strict_mode_escalates_medium
+
+v5.33 upgrade: bump default iteration from v5.31 → v5.32 (Lesson #61 — audit
+chain must track the latest closed version, not the version that introduced it).
 """
 from __future__ import annotations
 
@@ -21,7 +24,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _AUDIT_SCRIPT = _REPO_ROOT / "scripts" / "audit_v53x_dead_code.py"
 
 
-def _run_audit(iteration: str = "v5.31", strict: bool = False) -> subprocess.CompletedProcess:
+def _run_audit(iteration: str = "v5.32", strict: bool = False) -> subprocess.CompletedProcess:
     cmd = [sys.executable, str(_AUDIT_SCRIPT), "--iteration", iteration]
     if strict:
         cmd.append("--strict")
@@ -38,12 +41,12 @@ class TestAuditV53XChain(unittest.TestCase):
         import ast
         ast.parse(_AUDIT_SCRIPT.read_text(encoding="utf-8"))
         # Must run to completion (exit 0 or 1)
-        r = _run_audit("v5.31")
+        r = _run_audit("v5.32")
         self.assertIn(r.returncode, (0, 1), f"unexpected exit {r.returncode}: {r.stderr}")
 
     def test_audit_categorizes_5_finding_classes(self):
         """Output must surface all 5 categories: (a)-(e). Use v99.99 to ensure
-        every category has at least one finding (v5.31 is clean so (b) is absent)."""
+        every category has at least one finding (v5.32 is clean so (b) is absent)."""
         r = _run_audit("v99.99")
         output = r.stdout
         # Each category should appear at least once when there's drift
@@ -65,13 +68,13 @@ class TestAuditV53XChain(unittest.TestCase):
     def test_audit_detects_real_changelog_drift(self):
         """The audit must NOT confuse sub-headings like '### 19-Commit v5.11' with
         top-level versions (Lesson #58 cross-line regression)."""
-        # v5.31 should be the latest in AUDIT_CHANGELOG.md after closure
-        r = _run_audit("v5.31")
+        # v5.32 should be the latest in AUDIT_CHANGELOG.md after closure
+        r = _run_audit("v5.32")
         # If we incorrectly captured '19' as the latest (old bug), we'd see
-        # CHANGELOG-DRIFT even though v5.31 is present
+        # CHANGELOG-DRIFT even though v5.32 is present
         output = r.stdout
-        # There should be no 'CHANGELOG-DRIFT-AUDIT_CHANGELOG.md' for v5.31
-        # (since docs/AUDIT_CHANGELOG.md has v5.31 already)
+        # There should be no 'CHANGELOG-DRIFT-AUDIT_CHANGELOG.md' for v5.32
+        # (since docs/AUDIT_CHANGELOG.md has v5.32 already)
         self.assertNotIn(
             "CHANGELOG-DRIFT-AUDIT_CHANGELOG.md",
             output.split("[HIGH]")[1].split("[MEDIUM]")[0] if "[HIGH]" in output else "",
@@ -80,20 +83,20 @@ class TestAuditV53XChain(unittest.TestCase):
 
     def test_audit_finds_no_critical_when_clean(self):
         """When targeting an iteration that's been properly closed, CRITICAL count
-        must be zero. v5.31 is closed → 0 CRITICAL expected."""
-        r = _run_audit("v5.31")
+        must be zero. v5.32 is closed → 0 CRITICAL expected."""
+        r = _run_audit("v5.32")
         output = r.stdout
         # Find CRITICAL section
         crit_section = ""
         if "[CRITICAL]" in output:
             crit_section = output.split("[CRITICAL]")[1].split("[")[0]
         self.assertIn("0", crit_section.split("\n")[0],
-                      f"v5.31 should have 0 CRITICAL findings: {crit_section[:200]}")
+                      f"v5.32 should have 0 CRITICAL findings: {crit_section[:200]}")
 
     def test_audit_strict_mode_escalates_medium(self):
         """--strict should cause MEDIUM findings to fail (exit 1)."""
-        r_normal = _run_audit("v5.31", strict=False)
-        r_strict = _run_audit("v5.31", strict=True)
+        r_normal = _run_audit("v5.32", strict=False)
+        r_strict = _run_audit("v5.32", strict=True)
         # If there are any MEDIUM findings (almost always), strict should exit 1
         has_medium = "[MEDIUM] 0" not in r_normal.stdout
         if has_medium:
