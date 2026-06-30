@@ -123,6 +123,22 @@ MULTIFACTOR_WEIGHTS = {
 }
 
 
+# v5.28 P1 — 7D multifactor weights（candidate 量化勝出：full_7d_balanced_0_15）
+# 量化腳本：scripts/quantify_v528_7d_candidate.py
+# 量化結論：Pearson correlation 改善 +21.74pp（vs 4D baseline noise +13.14pp），淨 +8.6pp
+# 關鍵發現：macro 是最關鍵的 7D 維度（macro_alone: +21.41pp）
+# 向後相容：MULTIFACTOR_WEIGHTS (4D) 保留 fund_heavy 不變
+MULTIFACTOR_WEIGHTS_7D = {
+    "tech": 0.18,
+    "fund": 0.37,
+    "market": 0.13,
+    "risk": 0.12,
+    "sentiment": 0.10,
+    "news": 0.05,
+    "macro": 0.05,
+}
+
+
 def compute_dynamic_market_params(close: np.ndarray, i: int, lookback_52w: int = 252) -> Tuple[float, float, float]:
     """從 close array 動態計算 market_score 3 個時間序列參數。
 
@@ -235,6 +251,77 @@ def compute_4d_multifactor(
         "risk": risk_score,
         "composite": round(composite, 4),
     }
+
+
+# ============================================================================
+# v5.28 P1 — 7D multifactor 整合層
+# ============================================================================
+#
+# 設計：fixture `signal_distribution_per_ticker[t].components` 已含 7 維度分數
+# (market/technical/fundamental/risk/sentiment/news/macro)，無需重新計算。
+# 因此 7D 層是「整合層」而非「計算層」——接收預計算 components，
+# 用 MULTIFACTOR_WEIGHTS_7D 加權後輸出 composite。
+#
+# 對應 fixture key mapping:
+#   technical   → tech
+#   fundamental → fund
+#   其餘 key (market/risk/sentiment/news/macro) 已對齊
+#
+# 向後相容：compute_4d_multifactor() 與 4D backtest path 完全不變。
+
+
+def compute_7d_multifactor(components: Dict[str, float]) -> Dict[str, float]:
+    """計算 7D 維度 multifactor composite 分數（純整合層，無 random / I/O）。
+
+    Args:
+        components: 7 維度分數 dict, keys 必須包含
+            {tech, fund, market, risk, sentiment, news, macro},
+            各值 ∈ [0.0, 1.0]。
+
+    Returns:
+        {
+            "tech": ..., "fund": ..., "market": ..., "risk": ...,
+            "sentiment": ..., "news": ..., "macro": ...,
+            "composite": round(weighted_sum, 4)
+        }
+
+    Raises:
+        KeyError: components 缺任何 7D key。
+
+    Examples:
+        >>> c = {"tech":0.5,"fund":0.6,"market":0.7,"risk":0.4,
+        ...      "sentiment":0.55,"news":0.3,"macro":0.65}
+        >>> r = compute_7d_multifactor(c)
+        >>> abs(r["composite"] - 0.5330) < 0.001  # 7D 加權
+        True
+    """
+    missing = set(MULTIFACTOR_WEIGHTS_7D.keys()) - set(components.keys())
+    if missing:
+        raise KeyError(f"components 缺 7D 維度: {missing}")
+
+    composite = sum(
+        float(components[k]) * MULTIFACTOR_WEIGHTS_7D[k]
+        for k in MULTIFACTOR_WEIGHTS_7D
+    )
+
+    return {
+        "tech": float(components["tech"]),
+        "fund": float(components["fund"]),
+        "market": float(components["market"]),
+        "risk": float(components["risk"]),
+        "sentiment": float(components["sentiment"]),
+        "news": float(components["news"]),
+        "macro": float(components["macro"]),
+        "composite": round(composite, 4),
+    }
+
+
+def apply_7d_weights(components: Dict[str, float]) -> float:
+    """apply_7d_weights() — 對 fixture components 加權後只回傳 composite 純量。
+
+    Helper for `quantify_v528_7d_candidate.py` 與 dashboard 7D card。
+    """
+    return compute_7d_multifactor(components)["composite"]
 
 
 def composite_to_signal(composite: float) -> str:
