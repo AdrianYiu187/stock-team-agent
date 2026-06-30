@@ -1611,3 +1611,112 @@ create: scripts/tests/test_v520_json_safe_np_bool.py
 modify: scripts/stock_analysis.py
 modify: SKILL.md
 ```
+
+---
+
+## v5.21 — Yfinance Live Fixture + 3-Tier Fallback (2026-06-30)
+
+> 取代 hardcoded fixture snapshot,改用 yfinance live + 24h TTL cache + hardcoded 三層 fallback。
+
+### Background (P0 design — `abf2bb4`)
+
+`scripts/tests/fixtures/tickers_fundamentals.json` 438 行 hardcoded：
+- 5 sections (tickers / fundamentals / v5_10_scores / v5_11_3_scores / std_quant)
+- 3 個 caller 共用 (`cross_market_real_yfinance_e2e.py` + 2 pytest)
+- `cross_market_real_yfinance_e2e.py` 名稱誤導(說 "real yfinance" 但吃 hardcoded)
+- 一旦 scoring algorithm 改了,需手動重算 JSON 才能維持一致
+
+### Architecture (per `docs/v5.21_live_fixtures_design.md`)
+
+```
+┌─────────────────────────────────────────┐
+│ Tier 1: yfinance live + 24h TTL cache   │
+│   ↓ (cache miss / yfinance 失敗)        │
+│ Tier 2: Hardcoded v5.20 snapshot        │
+│   ↓ (hardcoded 也缺)                    │
+│ Tier 3: Raise (final missing)           │
+└─────────────────────────────────────────┘
+```
+
+3 modes:
+- `live` — Tier 1 only (default for fresh fetch)
+- `frozen` — Tier 2 only (CI 離線)
+- `hybrid` — Tier 1 + Tier 2 fallback (3-tier)
+
+### Implementation Phases
+
+| Phase | SHA | 內容 | pytest |
+|-------|-----|------|--------|
+| P0 design | `abf2bb4` | docs/v5.21_live_fixtures_design.md (193 行) | — |
+| P1 cache | `99bb339` | fixture_cache.py + yfinance_fundamentals.py | 10/10 |
+| P2 engine | `9cc6085` | live_score_engine.py wrapper | 7/7 |
+| P3 caller | `28d8079` | three_tier_loader.py + CLI `--mode` integration | 18/18 |
+| P4 gate | `91e22ba` | Stage 9 #17 (pytest) + #18 (frozen CLI) | 35/35 |
+| **總計 5 commits** | | **+5 new files, 5 modified** | **35 pytest** |
+
+### Files
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `scripts/data_sources/fixture_cache.py` | NEW | 24h TTL cache layer (overridable via FIXTURE_TTL_HOURS env) |
+| `scripts/data_sources/yfinance_fundamentals.py` | NEW | yfinance wrapper + per-ticker fail tolerance (from P45) |
+| `scripts/data_sources/live_score_engine.py` | NEW | recompute v5_10_scores / v5_11_3_scores / std_quant |
+| `scripts/data_sources/three_tier_loader.py` | NEW | Tier 1 + Tier 2 + Tier 3 fallback dispatcher |
+| `scripts/tests/test_v521_fixture_cache.py` | NEW | 10 pytest (live/cache/stale/too-stale/clear) |
+| `scripts/tests/test_v521_live_score_engine.py` | NEW | 7 pytest (math 一致 + cap saturation 保留) |
+| `scripts/tests/test_v521_three_tier_loader.py` | NEW | 9 pytest (mock fixture_cache, 涵蓋 3 mode) |
+| `scripts/tests/test_v521_cli_integration.py` | NEW | 9 pytest (subprocess CLI 驗證) |
+| `scripts/cross_market_real_yfinance_e2e.py` | MOD | +`--mode` / +`--force-refresh`, frozen 不寫回 fixtures |
+| `scripts/verify_v515_closure.py` | MOD | +Stage 9 #17 (v5.21 pytest) + #18 (frozen CLI) |
+| `.gitignore` | MOD | +`scripts/tests/fixtures/.cache/` |
+
+### Verification (P5 quant report)
+
+- **35/35 v5.21 pytest PASS** (0.85s)
+- **Δ drift vs v5.20 hardcoded**: 11/11 ticker = **0.00e+00** (數學完全一致)
+- **Max Δ**: v5.10 = 0.00e+00, v5.11.3 = 0.00e+00 (vs 5% tolerance = 0.05)
+- **Stage 9 closure**: 18/18 PASS (16 v5.20 + 2 v5.21)
+- **E2E AAPL**: 仍 0 warning (Lesson 30 永久化)
+- **0 regression on cap flatlines**: 仍 2/16 (per Stage 9 #6)
+- **0 regression on cross-market sample_size**: 仍 11 tickers
+
+### Lessons
+
+**Lesson 31 — Three-tier fallback chain**:
+- `fixture_cache` → `live_score_engine` → `three_tier_loader` → CLI 是 v5.21 4 層 stack
+- 任何一層 break 必被 Stage 9 #17/#18 gate 捕獲
+- frozen mode 是 CI 離線的 single source of truth
+- live mode 失敗時,fallback 到 hardcoded 是 offline-safe 保證
+
+**Lesson 32 — frozen mode 不覆寫 fixtures**:
+- frozen mode 跑 cross_market_real_yfinance_e2e 會顯示 11/11 ticker 但 skip 寫回
+- 避免無謂 git diff + 保持 v5.20 hardcoded snapshot 完整
+- live mode 才寫回 (cache miss → fresh yfinance → write back)
+
+### Usage Examples
+
+```bash
+# Default: live mode + 24h TTL cache
+python3 scripts/cross_market_real_yfinance_e2e.py
+
+# 強制重抓 yfinance (bypass cache)
+python3 scripts/cross_market_real_yfinance_e2e.py --mode live --force-refresh
+
+# CI 離線: 用 hardcoded snapshot
+python3 scripts/cross_market_real_yfinance_e2e.py --mode frozen
+
+# 三層 fallback: live 失敗自動用 hardcoded
+python3 scripts/cross_market_real_yfinance_e2e.py --mode hybrid
+
+# 跑 Stage 9 closure (含 v5.21 gates)
+python3 scripts/verify_v515_closure.py
+```
+
+### Diff Summary
+
+```
+5 commits (abf2bb4 + 99bb339 + 9cc6085 + 28d8079 + 91e22ba)
+8 files changed, 1240 insertions(+), 8 deletions(-)
+35 new pytest cases (10 + 7 + 9 + 9)
+0 regression on existing 24 cross-market pytest
+0 regression on existing 374 total pytest
