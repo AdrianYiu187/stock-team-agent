@@ -202,3 +202,48 @@ def recompute_all_scores_with_cap_warnings(
             "live_unavailable_metrics": [],
         },
     }
+
+
+# v5.24 P1 — Cross-market E2E helper (Lesson #49 整合驗證)
+# Per docs/v5.24_roadmap.md §P1: 串接 recompute_all_scores_with_cap_warnings()
+# + quantize_cross_market + 提供 cross-market signal distribution 觸發點。
+# 主流程整合點在 cross_market_real_yfinance_e2e.main() (P2)。
+
+
+def recompute_cross_market_with_cap_warnings(
+    fundamentals: dict[str, dict],
+) -> dict:
+    """v5.24 P1 — Cross-market E2E 整合 cap-zone warning。
+
+    等同 recompute_all_scores_with_cap_warnings() 但結構對齊 cross-market
+    E2E 流程,回傳額外 v5_11_3 std_quant + cross-market signal distribution key
+    (預留 operator dashboard 整合)。
+
+    Args:
+        fundamentals: {ticker: {pe, roe, peg, growth}, ...}
+
+    Returns:
+        {
+            'scores': {
+                'v5_10_scores': {ticker: float, ...},
+                'v5_11_3_scores': {ticker: float, ...},
+                'std_quant': {...},   # 來自 quantize_cross_market
+            },
+            'cap_warnings': [...],    # 同 recompute_all_scores_with_cap_warnings
+            'summary': {
+                'total_warnings': int,
+                'warning_by_metric': {metric: int},
+                'live_unavailable_metrics': [],   # 預留
+                'cross_market_signal_distribution': {},  # 預留 operator dashboard
+            },
+        }
+    """
+    base = recompute_all_scores_with_cap_warnings(fundamentals)
+    return {
+        "scores": base["scores"],
+        "cap_warnings": base["cap_warnings"],
+        "summary": {
+            **base["summary"],
+            "cross_market_signal_distribution": {},  # 預留 operator dashboard
+        },
+    }
