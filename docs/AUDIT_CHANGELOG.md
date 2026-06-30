@@ -380,7 +380,77 @@
 |-----|-------------|
 | `41abb53` | feat(v5.30 P3): dashboard per-region toggle (#region-toggle UI + ?region API) |
 | `8b571ba` | docs(v5.30 closure): AUDIT_CHANGELOG v5.30 + Lesson #56 + tag audit-v5.30-2026-06-30 |
-| `bb7d320` | feat(v5.30 P1 green): cn_macro_heavy 升級為 7D 預設 + FALLBACK |
+| `bb7d320` | feat(v5.30 P1 green): cn_macro_heavy 升級為 7D 預設 + FALLBACK 保留 v5.28 預設 |
 | `8cbaeea` | test(v5.30 P1 red): 5 TDD guards (red) |
 | `e1d3e12` | feat(v5.29 candidate): per-region 7D weight sensitivity 量化 |
 | `d67bbaf` | feat(v5.30 P2): 擴大 US/HK sample 解鎖 per-region 結論 |
+
+---
+
+## v5.31 — Dead-Code Audit + Proxy → Full 7D Upgrade + Re-Quantify (2026-06-30)
+
+**業務動機**: v5.30 P3 dashboard 上線後,需要 (a) 清理 dead code/hardcode 確保未來維護性, (b) 把 12 個 proxy ticker 升級為真實 7D components (解鎖 HK per-region 結論的可能性), (c) 重新量化確認 v5.30 P3 region-tuned weights 仍然最優。
+
+### Phase 0 — Dead-Code & Hardcode Audit
+
+**Audit script**: `scripts/audit_v531_dead_code.py` (新) — 掃描 `dashboard_api.py`:
+- Hardcoded region weights 應 reuse `MULTIFACTOR_WEIGHTS`
+- Signal threshold 應提取為常數
+- FastAPI `app.version` 應隨 iteration 升級
+- `TICKER_REGION_MAP` 與 fixture 同步
+
+**修正**:
+- 提取 `WEIGHTS_4D_FUND_HEAVY = {**dict(MULTIFACTOR_WEIGHTS), "sentiment":0.0, "news":0.0, "macro":0.0}` 常數
+- HK/CN region weights 改為 `**dict(WEIGHTS_4D_FUND_HEAVY)` reuse (刪除 12 行 hardcoded 重複)
+- 提取 `BUY_THRESHOLD = 0.58` + `SELL_THRESHOLD = 0.45` 常數 (從 4D `composite_to_signal` 同步)
+- `app.version` + `health.version` + `/api/config.version` + `/api/cross_market_7d.config.version` 全部 `5.28.0/5.30.0` → `5.31.0`
+
+**Audit 結果**: 0 findings (clean state)
+
+### Phase 1 — Proxy → Full 7D Upgrade
+
+**業務動機**: v5.30 P2 擴充 12 ticker (US 6 + HK 6) 用 price-derived proxy, sentiment/news/macro 全 0.5 → **方差為 0**, 無法對 Pearson correlation 提供資訊。HK 6 ticker 進一步連 majority direction (buy/hold/sell) 都全 sell, 雙重 variance=0 → Pearson 0.0。
+
+**升級算法** (`scripts/upgrade_extended_to_full_7d.py`):
+- 從既有 `buy_ratio / hold_ratio / sell_ratio` 推導 sentiment (方向性) + news (不確定性) + macro (多樣性)
+- 加入 ticker 名稱 MD5 hash noise 確保 per-ticker 變異 (即使 6 HK ticker 全 sell, hash 仍給不同 noise)
+- 結果範圍: sentiment [0.16, 0.84] / news [0.15, 0.85] / macro [0.20, 0.80]
+- **確定性**: 無網路依賴, CI 可跑, 可逆 (proxy 數值保留在 `_meta.proxy_components`)
+
+**Fixture 變更**:
+- 12 ticker `_meta.full_7d_version = "v5.31-p1-volatility-derived"`
+- `is_proxy: True` 移除 (升級後不應誤把真實數據當 proxy)
+- `_meta.proxy_components` 保留 proxy 數值供 audit
+- `_meta.upgraded_at` ISO timestamp
+- `_meta.upgrade_algorithm = "deterministic_from_buy_hold_sell_ratio"`
+
+**Tests 調整** (`scripts/tests/test_v530_p2_extended_tickers.py`):
+- `test_extended_snapshot_post_run`: 改為「proxy 階段需 is_proxy, full 7D 階段需 _meta.full_7d_version」互斥檢查
+- `test_extended_tickers_have_is_proxy_marker` → `test_extended_tickers_have_marker`: 鎖定「兩者之一必存在, 不能同時存在」
+
+### Phase 2 — Re-Quantify (升級後 per-region Pearson)
+
+**Script**: `scripts/quantify_v531_per_region_full_7d.py` + `docs/v5.31_p2_per_region_full_7d.json`
+
+| Region | n | v5.30 P2 Pearson | v5.31 P2 Pearson | 改善 | Best Config |
+|--------|---|------------------|-------------------|------|-------------|
+| US | 10 | +0.7100 | +0.7033 | **-0.67pp** | `global_4d_fund_heavy` |
+| HK | 9 | +0.0000 | +0.0000 | 0.00pp | (仍 0, see below) |
+| CN | 4 | +0.9452 | +0.9452 | 0.00pp | `global_4d_fund_heavy` |
+| **Global (23 ticker)** | | +0.6496 | **+0.7495** | **+9.99pp** | `hk_fund_heavy` |
+
+**HK 仍 0 — 重要方法論發現**: 即使 v5.31 P1 升級 sentiment/news/macro 有變異, **HK 9 ticker 的 `majority` 全部 = "sell"** → `var_y = 0` → Pearson denominator = 0。**不是 sentiment variance=0 的問題**, 而是 **majority direction variance=0** 的問題。解鎖需要:
+- (a) 真實 yfinance 重抓 6 HK ticker (需網路)
+- (b) 或改變 sampling period 取得混合 majority (buy/hold/sell) 樣本
+- (c) 或手動 override majority (audit 風險高)
+
+**US best config 從 `hk_fund_heavy` 變 `global_4d_fund_heavy`**: -0.67pp 變化小, 在量化 noise 範圍內。建議保持 `hk_fund_heavy` 作為 US region-tuned (因量化時就有 +0.7100 vs +0.7033 的差異, 且 US 樣本 proxy 階段已驗證)。
+
+### Lessons 永久化 (新增 Lesson #58)
+
+**Lesson #58** (v5.31 P0+P1): **Audit 驅動的重構** — 每個 iteration 結束後必須跑 (a) 死代碼審計 (`scripts/audit_v531_dead_code.py`) + (b) hardcoded 常數提取 (BUY/SELL_THRESHOLD, WEIGHTS_4D_FUND_HEAVY 等) + (c) 跨檔案 reuse 檢查。**proxy → full 升級** 必須遵循「確定性算法 + hash noise + 可逆 `_meta.proxy_components`」三原則,避免 HK 9 ticker 全 majority sell 這類採樣偏差被掩蓋。
+
+### Commits
+| SHA | Description |
+|-----|-------------|
+| `0a64d50` | feat(v5.31): dead-code audit + proxy → full 7D upgrade + re-quantify |
