@@ -4,3 +4,7 @@ __pycache__/
 
 # v5.21 P1 — yfinance TTL fixture cache (live data, 不進 git)
 scripts/tests/fixtures/.cache/
+
+# v5.22 Stage 0 — backup 目錄不進 git 且不該被 pytest 掃到
+backups/
+**/backups/
