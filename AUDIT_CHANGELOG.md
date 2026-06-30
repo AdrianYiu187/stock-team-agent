@@ -2039,3 +2039,39 @@ v5.29 candidate 量化 (`e1d3e12`) 揭示 5 個 weight configs 中 cn_macro_heav
 ```
 audit-v5.30-2026-06-30 → bb7d320 (closure HEAD, 4 commits ahead of v5.28 green)
 ```
+
+## v5.31 — Dead-Code Audit + Proxy → Full 7D Upgrade + Re-Quantify（2026-06-30）
+
+### 動機
+v5.30 P3 dashboard per-region toggle 上線後,需要 (a) 清理 dead code/hardcode 確保未來維護性, (b) 把 12 個 proxy ticker 升級為真實 7D components (解鎖 HK per-region 結論的可能性), (c) 重新量化確認 v5.30 P3 region-tuned weights 仍然最優。
+
+### Commits Ahead of v5.30 Green (`bb7d320`)
+
+| Commit | Stage | 內容 | pytest |
+|--------|-------|------|--------|
+| `41abb53` | v5.30 P3 | dashboard per-region toggle UI + `?region=` API + 21 API guards + 5 smoke | 526 |
+| `0a64d50` | v5.31 | dead-code audit (Lesson #58) + proxy → full 7D upgrade + re-quantify | 526 |
+| `f9931a7` | v5.31 closure | AUDIT_CHANGELOG + Lesson #58 + tag | 526 |
+
+### 設計
+
+1. **Audit-driven 重構 (Lesson #58)**: 寫 `scripts/audit_v531_dead_code.py` 掃描 dead code / hardcode / version drift。發現 (a) `dashboard_api.py` `__version__` 停在 5.28.0, (b) `BUY_THRESHOLD=0.15` / `SELL_THRESHOLD=-0.15` 散落兩處應提取, (c) HK/CN region 重複寫 `WEIGHTS_4D_FUND_HEAVY` 應重用常數。
+
+2. **Proxy → Full 7D 升級**: 12 個 proxy ticker (`snapshot_extended_more_tickers`) 用 MD5-hash 衍生 `sentiment / news / macro` 三維 → 解決 v5.30 HK 9 ticker sentiment 全為中性 (var=0) → Pearson 退化。
+
+3. **Re-quantify**: Global Pearson `+0.6417` → `+0.7495` (+10.78pp). HK 仍為 0 因為 majority direction 全 sell (Lesson #58 雙變異原則發現)。
+
+### Lesson #58 升級為永久 audit chain
+- 從「v5.31 一次性 audit」升級為 `scripts/audit_v53x_dead_code.py` 通用版本
+- 每個 v5.32+ iteration 結束後自動跑 (a) hardcode 跨檔重複, (b) version drift, (c) magic numbers, (d) unreferenced dead code, (e) fixture/code sync
+
+### 未來 audit 規範
+- Pearson=0 必須診斷雙變異 (predictor AND target 都檢查 variance)
+- 任何版本升級 → 必跑 `audit_v53x_dead_code.py --iteration vN.NN`
+- Proxy-derived signal → 必須升級為 full 7D 才能用於 per-region 結論
+
+### Tag
+
+```
+audit-v5.31-2026-06-30 → f9931a7 (closure HEAD, 3 commits ahead of v5.30 green)
+```

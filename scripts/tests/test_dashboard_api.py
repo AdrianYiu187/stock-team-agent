@@ -206,12 +206,12 @@ class TestDashboard7DEndpoint(unittest.TestCase):
         self.assertGreater(len(aapl["advice"]), 0)
 
     def test_7d_endpoint_config_block(self):
-        """A18: response.config 含 weights_7d + source + version (v5.30 升為 5.30.0)"""
+        """A18: response.config 含 weights_7d + source + version (v5.31 升為 5.31.0)"""
         r = client.get("/api/cross_market_7d")
         data = r.json()
         cfg = data["config"]
         self.assertEqual(cfg["source"], "fixture_signal_distribution_per_ticker")
-        self.assertEqual(cfg["version"], "5.30.0")  # v5.30 P1 升級
+        self.assertEqual(cfg["version"], "5.31.0")  # v5.31 P0 升級
         self.assertIn("macro", cfg["weights_7d"])
 
     def test_7d_endpoint_ticker_filter(self):
