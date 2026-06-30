@@ -25,7 +25,8 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / ".ca
 
 # v5.21 A — 全批准預設
 DEFAULT_TTL_HOURS = 24
-DEFAULT_STALE_TOLERANCE_DAYS = 7
+# v5.23 P3 — 7 → 14 days (live mode weekend window yfinance 5% 失敗率 + cross-week cascade)
+DEFAULT_STALE_TOLERANCE_DAYS = 14
 
 
 def _get_ttl_hours() -> int:
