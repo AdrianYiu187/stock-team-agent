@@ -55,6 +55,25 @@ def test_html_has_close_source_toggle():
     print("✓ HTML has close_source toggle (real/mock)")
 
 
+def test_html_has_api_integration():
+    """驗證 dashboard 串接 dashboard_api FastAPI endpoint."""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "fetchCrossMarket" in html, "fetchCrossMarket helper missing"
+    assert "/api/cross_market" in html, "API endpoint URL missing"
+    assert "close_source=" in html, "close_source query param missing"
+    assert "fetch(" in html, "fetch call missing"
+    print("✓ HTML integrates with dashboard API (fetch /api/cross_market)")
+
+
+def test_html_has_async_setCloseSource():
+    """驗證 setCloseSource 為 async + 真實切換 (而非只切 label)。"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "async function setCloseSource" in html, "setCloseSource not async"
+    # 真實切換應呼叫 fetchCrossMarket
+    assert html.count("fetchCrossMarket(") >= 3, "setCloseSource 沒呼叫 fetchCrossMarket"
+    print("✓ HTML setCloseSource async + 真實切換 API")
+
+
 def test_html_has_summary_stats():
     """驗證 6 個 summary stat cards: Tickers, BUY, HOLD, SELL, HIGH-Risk, mean final_score."""
     html = DASHBOARD.read_text(encoding="utf-8")
@@ -95,6 +114,8 @@ def main():
         test_html_displays_7_components,
         test_html_has_risk_classification,
         test_html_has_close_source_toggle,
+        test_html_has_api_integration,
+        test_html_has_async_setCloseSource,
         test_html_has_summary_stats,
         test_html_has_signal_distribution_bar,
         test_html_dark_theme,

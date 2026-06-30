@@ -232,29 +232,55 @@
     let currentData = null;
     let currentSource = 'real';
 
+    async function fetchCrossMarket(closeSource) {
+      const url = `http://localhost:8080/api/cross_market?close_source=${closeSource}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+      return res.json();
+    }
+
     async function loadFixture() {
+      // 優先嘗試 dashboard API (real backtest), fallback 至 fixture JSON
       try {
-        // 嘗試 fetch（file:// 會失敗 → fallback）
+        currentData = await fetchCrossMarket(currentSource);
+        return;
+      } catch (e) {
+        // API 不可用 — fallback
+      }
+      try {
         const res = await fetch('../scripts/tests/fixtures/tickers_fundamentals.json');
         if (!res.ok) throw new Error('fetch failed');
         currentData = await res.json();
       } catch (e) {
-        // Fallback: 用 inline data
         document.getElementById('grid').innerHTML =
-          '<div class="error">無法直接讀取 fixture (file:// 限制)。請用 HTTP server:' +
-          '<br><br><code>cd ~/stock-team-agent && python -m http.server 8080</code>' +
+          '<div class="error">無法讀取資料來源。<br><br>' +
+          '<b>選項 1</b>: 啟動 dashboard API — <code>cd ~/stock-team-agent && python -m uvicorn scripts.dashboard_api:app --port 8080</code>' +
+          '<br><br><b>選項 2</b>: 啟動 HTTP server — <code>cd ~/stock-team-agent && python -m http.server 8080</code>' +
           '<br><br>然後開啟 <a href="http://localhost:8080/dashboard/index.html" style="color:#10b981">http://localhost:8080/dashboard/index.html</a></div>';
         return;
       }
-      render();
     }
 
-    function setCloseSource(src) {
+    async function setCloseSource(src) {
       currentSource = src;
       document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('active'));
       event.target.classList.add('active');
-      // close_source 切換需要重新跑 backtest — 這裡用目前 fixture 數據
-      // 完整切換需串接 run_cross_market_comparison() API
+
+      // 重抓 API 數據 (real ↔ mock 真實切換)
+      document.getElementById('grid').innerHTML = '<div class="loading">載入 ' + src + ' 數據中…</div>';
+      try {
+        currentData = await fetchCrossMarket(src);
+      } catch (e) {
+        // API 失敗 → 用 fixture fallback (僅 real 模式有效)
+        try {
+          const res = await fetch('../scripts/tests/fixtures/tickers_fundamentals.json');
+          currentData = await res.json();
+        } catch (e2) {
+          document.getElementById('grid').innerHTML =
+            '<div class="error">切換失敗: ' + e.message + '</div>';
+          return;
+        }
+      }
       render();
     }
 
