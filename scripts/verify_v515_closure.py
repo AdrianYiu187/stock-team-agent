@@ -303,6 +303,53 @@ def main() -> int:
         if e2e_log.exists():
             print(f"   e2e log tail: {e2e_log.read_text()[-500:]}")
 
+    # ===== v5.21 P4: Live fixture pytest gate (Lesson 31) =====
+    # Lesson 31：fixture_cache + live_score_engine + three_tier_loader 是 v5.21
+    # 核心,任何一層 break 會讓 frozen mode fallback 不 work → 19+ pytest 必綠。
+    print("\n⚠️  跑 v5.21 pytest（Lesson 31 gate）...")
+    v521_pytest = subprocess.run(
+        [
+            sys.executable, "-m", "pytest",
+            "scripts/tests/test_v521_fixture_cache.py",
+            "scripts/tests/test_v521_live_score_engine.py",
+            "scripts/tests/test_v521_three_tier_loader.py",
+            "scripts/tests/test_v521_cli_integration.py",
+            "-v", "--tb=short",
+        ],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+    )
+    v521_pass = (
+        v521_pytest.returncode == 0
+        and " failed" not in v521_pytest.stdout.split("===")[-1] if "===" in v521_pytest.stdout else True
+        and " 0 failed" in v521_pytest.stdout
+    )
+    if not check(
+        "17. v5.21 live fixture pytest (35/35 PASS)",
+        v521_pass,
+        f"exit={v521_pytest.returncode}",
+    ):
+        failures += 1
+        print(f"   v521 pytest tail: {v521_pytest.stdout[-500:]}")
+
+    # ===== v5.21 P4: Frozen mode CLI gate (Lesson 31) =====
+    # 驗證 frozen mode 仍能跑 cross_market_real_yfinance_e2e (離線 CI 模式)
+    print("\n⚠️  跑 v5.21 frozen mode CLI（Lesson 31 gate）...")
+    frozen_result = subprocess.run(
+        [sys.executable, "scripts/cross_market_real_yfinance_e2e.py", "--mode", "frozen"],
+        cwd=REPO_ROOT, capture_output=True, text=True, timeout=120,
+    )
+    frozen_pass = (
+        frozen_result.returncode == 0
+        and "11/11 ticker 從 hardcoded 載入" in frozen_result.stdout
+    )
+    if not check(
+        "18. v5.21 frozen mode CLI (11/11 hardcoded 載入)",
+        frozen_pass,
+        f"exit={frozen_result.returncode}",
+    ):
+        failures += 1
+        print(f"   frozen stderr tail: {frozen_result.stderr[-500:]}")
+
     # 總結
     print(f"\n{'='*50}")
     print(f"Stage 9 v5.15 closure: {failures} failure(s)")
