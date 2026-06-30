@@ -5,6 +5,27 @@ Tier 1: yfinance live fetch with 24h TTL cache (fixture_cache.get_all_fundamenta
 Tier 2: Hardcoded scripts/tests/fixtures/tickers_fundamentals.json (v5.20 snapshot)
 Tier 3: Per-ticker error (ticker 完全無法取得)
 
+v5.23 P1 — cap_coverage_report() API (per docs/v5.23_roadmap.md §P1 + Lesson #50):
+量化 score function 在 param_range 內的 cap-zone coverage。
+從 v5.22 Stage B-0 N=50000 standalone 腳本 → reusable API。
+讓任何 score_fn + param_range → {coverage, is_by_design, threshold_value}
+都能量化 cap-zone 比例,避免每次重新 audit 都重跑整個 sweep。
+
+使用:
+    from data_sources.three_tier_loader import cap_coverage_report
+
+    # 量化 PEG>5 真實 cap-zone 比例
+    result = cap_coverage_report(
+        score_fn=lambda peg: fund_score_multifactor(20.0, 0.15, peg, 0.10),
+        param_name="peg_val",
+        param_range=(0.0, 50.0),
+        cap_threshold=0.10,  # PEG>5 cap-zone 定義: peg_factor<=0.10
+        n_samples=10000,
+    )
+    # result = {"coverage": 0.91, "is_by_design": False,
+    #            "threshold_value": 5.0, "param_name": "peg_val",
+    #            "score_min": 0.05, "score_max": 0.95}
+
 使用:
     from data_sources.three_tier_loader import load_fundamentals_three_tier
 
@@ -30,7 +51,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 # 確保 fixture_cache 可 import
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent
@@ -186,4 +207,93 @@ def load_fundamentals_three_tier(
         "source": overall,
         "missing": [],
         "partial": partial,
+    }
+
+
+# v5.23 P1 — cap_coverage_report() API (per docs/v5.23_roadmap.md §P1 + Lesson #50)
+
+# By-design cap-zone coverage 閾值 (per v5.22 Stage B-0 N=50000 結論)
+# 真實樣本 cap-zone > 0.5% → 真實 pitfall 需修
+# 真實樣本 cap-zone ≤ 0.5% → by-design 保留
+DEFAULT_BY_DESIGN_THRESHOLD = 0.005  # 0.5%
+
+
+def cap_coverage_report(
+    score_fn: Callable[[float], float],
+    param_name: str,
+    param_range: tuple[float, float],
+    cap_threshold: float,
+    n_samples: int = 10000,
+    by_design_threshold: float = DEFAULT_BY_DESIGN_THRESHOLD,
+) -> dict:
+    """量化 score_fn 在 param_range 內的 cap-zone coverage。
+
+    Args:
+        score_fn: 接收 1 個 float param value, 回傳 score (float 0..1)
+                  Important: 應該傳 *_factor 函數(如 peg_factor), 不是 fund_score_multifactor
+                  weighted composite。否則 cap-zone 會被其他因子稀釋看不到。
+        param_name: param 名稱 (e.g. "peg_val", "roe", "beta")
+        param_range: (min, max) uniform sweep range
+        cap_threshold: cap-zone 定義 (e.g. 0.10 = score<=0.10 視為 cap-zone)
+        n_samples: sample count (default 10000,Stage B-0 用 50000 需顯式調高)
+        by_design_threshold: ≤ 此比例視為 by-design 保留 (default 0.005 = 0.5%)
+
+    Returns:
+        {
+            "coverage": float,           # cap-zone 比例 (0..1)
+            "is_by_design": bool,        # coverage ≤ by_design_threshold → True
+            "threshold_value": float,    # param_range[0] + coverage*range (cap 起點推測)
+            "param_name": str,           # 傳入的 param_name
+            "score_min": float,          # 最小 score
+            "score_max": float,          # 最大 score
+            "n_samples": int,            # 實際 sample count
+            "cap_zone_samples": int,     # 落在 cap-zone 的樣本數
+        }
+
+    Design (per v5.22 Stage B-0 + Lesson #48 + #50):
+    - Uniform sweep in param_range
+    - score <= cap_threshold 視為 cap-zone (cap 通常是 floor)
+    - by_design 判斷:coverage ≤ by_design_threshold (default 0.5%)
+
+    IMPORTANT (per Lesson #48):
+    - 必須傳 *_factor helper, 非 fund_score_multifactor weighted composite
+    - 否則 cap-zone 被其他因子稀釋看起來像 0%, 誤判 by-design
+
+    Lesson #48 lesson: 不要只看「單調遞減」就判定 pitfall,要量化真實分布 cap-zone
+                     coverage 是否 > 0.5%。Stage B-0 N=50000 排除 5 false-positive。
+    """
+    if param_range[0] >= param_range[1]:
+        raise ValueError(
+            f"❌ param_range[0] ({param_range[0]}) 必須 < param_range[1] ({param_range[1]})"
+        )
+    if n_samples < 10:
+        raise ValueError(f"❌ n_samples ({n_samples}) 太少,最少 10")
+
+    lo, hi = param_range
+    step = (hi - lo) / (n_samples - 1)
+    samples = [lo + i * step for i in range(n_samples)]
+
+    scores = [score_fn(x) for x in samples]
+    cap_zone_count = sum(1 for s in scores if s <= cap_threshold)
+    coverage = cap_zone_count / n_samples
+
+    score_min = min(scores)
+    score_max = max(scores)
+
+    # threshold_value: cap-zone 第一個 sample 的 param value (推測 cap 起點)
+    threshold_value = samples[0]
+    for x, s in zip(samples, scores):
+        if s <= cap_threshold:
+            threshold_value = x
+            break
+
+    return {
+        "coverage": coverage,
+        "is_by_design": coverage <= by_design_threshold,
+        "threshold_value": threshold_value,
+        "param_name": param_name,
+        "score_min": score_min,
+        "score_max": score_max,
+        "n_samples": n_samples,
+        "cap_zone_samples": cap_zone_count,
     }
