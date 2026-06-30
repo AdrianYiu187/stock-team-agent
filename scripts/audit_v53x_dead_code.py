@@ -38,6 +38,16 @@ def find_python_files() -> List[Path]:
     return sorted(SCRIPTS.rglob("*.py"))
 
 
+# --- v5.33 D2 (b) filters ----------------------------------------------------
+# CLI / verification / audit / upgrade scripts are standalone entry points —
+# their internal literals are intentional, not duplication. Framework patterns
+# (pytest.main, FastAPI app, etc.) generate false-positive magic numbers.
+CLI_SCRIPT_PREFIXES = ("scripts/verify_", "scripts/check_", "scripts/audit_",
+                       "scripts/upgrade_", "scripts/run_", "scripts/quantify_")
+FRAMEWORK_PATTERNS = ("pytest.main", "unittest.main", "FastAPI(", "TestClient(",
+                      "from fastapi", "from flask", "from django", "from pydantic")
+
+
 def parse_tree(path: Path) -> ast.Module | None:
     try:
         return ast.parse(path.read_text(encoding="utf-8"))
@@ -48,10 +58,14 @@ def parse_tree(path: Path) -> ast.Module | None:
 # ---------------------------------------------------------------------------
 # (a) Hardcoded cross-file duplication
 # ---------------------------------------------------------------------------
-def audit_hardcode_duplication() -> List[Dict]:
+def audit_hardcode_duplication(noise_filter: bool = False) -> List[Dict]:
     """Find numeric/string literals duplicated across 2+ files that look
     like they should be a single constant. Skips trivial literals (0.0,
-    1.0, etc.) that are noise."""
+    1.0, etc.) that are noise.
+
+    v5.33 D2 (b): if noise_filter=True, skip CLI/verify/audit/upgrade/quantify
+    scripts whose literals are intentional standalone-entry-point values.
+    """
     findings: List[Dict] = []
     literal_counts: Dict[str, Set[str]] = defaultdict(set)
     # Threshold: literal must appear in >= 2 distinct files and be >= 4 chars
@@ -71,6 +85,11 @@ def audit_hardcode_duplication() -> List[Dict]:
         # Skip test files (allowed to embed magic numbers)
         if "tests" in py.parts:
             continue
+        # v5.33 D2 (b): noise_filter — skip CLI scripts (intentional literals)
+        if noise_filter:
+            rel = str(py.relative_to(ROOT))
+            if any(rel.startswith(p) for p in CLI_SCRIPT_PREFIXES):
+                continue
         for m in pat.finditer(text):
             lit = m.group(1)
             # Skip common imports & standard names
@@ -166,10 +185,15 @@ def audit_version_drift(expected_version: str) -> List[Dict]:
 # ---------------------------------------------------------------------------
 # (c) Constants extraction — magic numbers in business logic
 # ---------------------------------------------------------------------------
-def audit_magic_numbers() -> List[Dict]:
+def audit_magic_numbers(framework_filter: bool = False) -> List[Dict]:
     """Scan for inline numeric thresholds in business logic that should be
     named constants. Heuristic: literal between 0 and 1 in non-test file,
-    used in `if`/`return` contexts."""
+    used in `if`/`return` contexts.
+
+    v5.33 D2 (b): if framework_filter=True, skip lines that reference
+    FastAPI/pytest/unittest/pydantic — these libraries legitimately use
+    inline numbers (status codes, timeout defaults, etc.).
+    """
     findings: List[Dict] = []
     magic_pat = re.compile(r'(?:if|return|>=|<=|>|<|==)\s+([01]\.\d{2,})')
 
@@ -179,6 +203,9 @@ def audit_magic_numbers() -> List[Dict]:
         try:
             text = py.read_text(encoding="utf-8")
         except OSError:
+            continue
+        # v5.33 D2 (b): framework_filter — skip framework-heavy files wholesale
+        if framework_filter and any(pat in text for pat in FRAMEWORK_PATTERNS):
             continue
         for lineno, line in enumerate(text.splitlines(), start=1):
             for m in magic_pat.finditer(line):
@@ -360,6 +387,14 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--iteration", default="v5.32", help="Expected version (e.g. v5.32)")
     p.add_argument("--strict", action="store_true", help="Treat MEDIUM as failure")
+    # v5.33 D2 (b): granular filter flags for CI / targeted checks
+    p.add_argument("--only", choices=["a", "b", "c", "d", "e"],
+                   help="Run only one category: (a) hardcode / (b) drift / "
+                        "(c) magic / (d) dead-code / (e) fixture-sync")
+    p.add_argument("--noise-filter", action="store_true",
+                   help="Skip CLI/verify/audit/upgrade/quantify scripts in (a) hardcode")
+    p.add_argument("--framework-filter", action="store_true",
+                   help="Skip files referencing FastAPI/pytest/unittest/pydantic in (c) magic")
     args = p.parse_args()
 
     expected = args.iteration.lstrip("v")
@@ -367,11 +402,17 @@ def main() -> int:
     print()
 
     findings: List[Dict] = []
-    findings += audit_hardcode_duplication()
-    findings += audit_version_drift(expected)
-    findings += audit_magic_numbers()
-    findings += audit_dead_code()
-    findings += audit_fixture_sync()
+    # v5.33 D2 (b): --only gate (skip categories not requested)
+    if not args.only or args.only == "a":
+        findings += audit_hardcode_duplication(noise_filter=args.noise_filter)
+    if not args.only or args.only == "b":
+        findings += audit_version_drift(expected)
+    if not args.only or args.only == "c":
+        findings += audit_magic_numbers(framework_filter=args.framework_filter)
+    if not args.only or args.only == "d":
+        findings += audit_dead_code()
+    if not args.only or args.only == "e":
+        findings += audit_fixture_sync()
 
     findings.sort(key=lambda f: (SEVERITY_ORDER.get(f["severity"], 99), f["id"]))
 

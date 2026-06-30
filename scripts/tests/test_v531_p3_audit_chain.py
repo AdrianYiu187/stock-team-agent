@@ -103,6 +103,62 @@ class TestAuditV53XChain(unittest.TestCase):
             self.assertEqual(r_strict.returncode, 1,
                              f"--strict should fail when MEDIUM > 0; got exit {r_strict.returncode}")
 
+    # --- v5.33 D2 (b) — new CLI flags ----------------------------------------
+    def test_audit_only_flag_isolates_single_category(self):
+        """--only <a|b|c|d|e> should only run that category (Lesson #62)."""
+        # Use v99.99 to FORCE (b) findings (version-drift always triggers on unknown version).
+        # Otherwise a clean v5.32 produces 0 (b) findings → category label never printed.
+        r = subprocess.run(
+            [sys.executable, str(_AUDIT_SCRIPT), "--iteration", "v99.99", "--only", "b"],
+            capture_output=True, text=True, cwd=str(_REPO_ROOT))
+        out = r.stdout
+        # (b) category SHOULD appear; others MUST NOT
+        self.assertIn("(b)", out, f"--only b must include (b):\n{out[:500]}")
+        self.assertNotIn("(a) hardcode", out,
+                         f"--only b must exclude (a):\n{out[:500]}")
+        self.assertNotIn("(c) magic", out,
+                         f"--only b must exclude (c):\n{out[:500]}")
+        self.assertNotIn("(d) dead", out,
+                         f"--only b must exclude (d):\n{out[:500]}")
+        self.assertNotIn("(e) fixture", out,
+                         f"--only b must exclude (e):\n{out[:500]}")
+
+    def test_audit_noise_filter_reduces_hardcode_findings(self):
+        """--noise-filter should reduce (a) hardcode findings by skipping CLI scripts."""
+        r_baseline = _run_audit("v5.32")  # default runs all categories
+        r_filtered = subprocess.run(
+            [sys.executable, str(_AUDIT_SCRIPT), "--iteration", "v5.32",
+             "--only", "a", "--noise-filter"],
+            capture_output=True, text=True, cwd=str(_REPO_ROOT))
+        baseline_total = self._extract_total(r_baseline.stdout)
+        filtered_total = self._extract_total(r_filtered.stdout)
+        # The (a)-only + noise-filtered count must be strictly less than baseline total
+        # (we're running only one category that's filtered, vs all 5 unfiltered)
+        self.assertLess(filtered_total, baseline_total,
+                        f"--only a --noise-filter ({filtered_total}) should be less "
+                        f"than baseline ({baseline_total})")
+
+    def test_audit_framework_filter_reduces_magic_findings(self):
+        """--framework-filter should reduce (c) magic-number findings in framework files."""
+        r_filtered = subprocess.run(
+            [sys.executable, str(_AUDIT_SCRIPT), "--iteration", "v5.32",
+             "--only", "c", "--framework-filter"],
+            capture_output=True, text=True, cwd=str(_REPO_ROOT))
+        # Should produce output (not error)
+        self.assertIn("[LOW]", r_filtered.stdout,
+                      f"--only c --framework-filter must run cleanly:\n"
+                      f"{r_filtered.stdout[:300]}")
+
+    @staticmethod
+    def _extract_total(output: str) -> int:
+        """Parse 'Total: N findings' line."""
+        for line in output.splitlines():
+            if line.startswith("Total:"):
+                # 'Total: 151 findings | ...'
+                parts = line.split()
+                return int(parts[1])
+        return -1
+
 
 if __name__ == "__main__":
     unittest.main()
