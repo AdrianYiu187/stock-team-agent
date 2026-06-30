@@ -289,10 +289,18 @@ def compute_signal_distribution_per_ticker(
 
 def main() -> int:
     import argparse
-    parser = argparse.ArgumentParser(description="v5.16 cross_market e2e + per-ticker signal")
+    parser = argparse.ArgumentParser(description="v5.21 cross_market e2e + per-ticker signal (3-tier fixture)")
     parser.add_argument(
         "--region-neutral-macro", action="store_true",
         help="v5.18: 把所有 ticker macro 強制設為 0.5（驗證 region-level macro 拖累效應）",
+    )
+    parser.add_argument(
+        "--mode", choices=["live", "frozen", "hybrid"], default="live",
+        help="v5.21: 3-tier fixture mode. live=yfinance+cache (default), frozen=hardcoded only (CI), hybrid=live+hardcoded fallback",
+    )
+    parser.add_argument(
+        "--force-refresh", action="store_true",
+        help="v5.21: 強制重抓 yfinance,bypass 24h TTL cache",
     )
     args = parser.parse_args()
 
@@ -303,14 +311,27 @@ def main() -> int:
 
     # v5.15 P46 — 從 TICKER_UNIVERSE 拉（11 ticker 跨 US/HK/CN）
     tickers = TICKER_UNIVERSE
-    print(f"📡 拉 yfinance fundamentals ({len(tickers)} tickers: {tickers})...")
-    fetch_result = fetch_fundamentals(tickers)
-    fundamentals = fetch_result["fundamentals"]
-    failed = fetch_result["failed"]
+    print(f"📡 Fixture mode = {args.mode}, tickers ({len(tickers)})...")
+
+    # v5.21 P3 — 三層 loader 取代原 fetch_fundamentals
+    from data_sources.three_tier_loader import load_fundamentals_three_tier
+
+    loader_result = load_fundamentals_three_tier(
+        tickers, mode=args.mode, force_refresh=args.force_refresh,
+    )
+    fundamentals = loader_result["fundamentals"]
+    partial = loader_result.get("partial", [])
 
     if not fundamentals:
-        print("❌ 全部 ticker 拉取失敗，請檢查網路 / yfinance API")
+        print("❌ 全部 ticker 拉取失敗，請檢查網路 / yfinance API / hardcoded fixture")
         return 1
+
+    # v5.21 P3 — 標示 source 透明度
+    print(f"   source: {loader_result['source']}")
+    if partial:
+        print(f"   ⚠️  {len(partial)} ticker fallback 到 hardcoded: {partial}")
+    for t in sorted(set(tickers) - set(fundamentals.keys())):
+        print(f"   ❌ {t} 完全缺資料 (skip)")
 
     print(f"\n{'Ticker':<14} {'PE':>6} {'ROE':>7} {'PEG':>6} {'growth':>7}")
     for t, f in fundamentals.items():
@@ -386,8 +407,11 @@ def main() -> int:
             "v5113_source": "scripts/stock_analysis.py (HEAD)",
             "fetched_at": datetime.now(timezone.utc).isoformat(),
             "ticker_universe_size": len(TICKER_UNIVERSE),
-            "failed_tickers": failed,
+            "failed_tickers": sorted(set(TICKER_UNIVERSE) - set(fundamentals.keys())),
             "max_age_days": FIXTURES_MAX_AGE_DAYS,
+            "v5_21_mode": args.mode,
+            "v5_21_source": loader_result["source"],
+            "v5_21_partial_fallback": partial,
         },
     }
     # 保留既有 sentiment/macro（如果存在）
@@ -396,6 +420,16 @@ def main() -> int:
     if macro_dict:
         fixture_data["macro_per_ticker"] = macro_dict
 
+    # v5.21 P3 — frozen mode 不覆寫 hardcoded fixture（避免無謂 git diff）
+    failed_count = len(set(TICKER_UNIVERSE) - set(fundamentals.keys()))
+    if args.mode == "frozen":
+        print(f"\n🧊 Frozen mode: skip 寫回 {fixtures_path}（避免覆蓋 hardcoded snapshot）")
+        print(
+            f"✅ {len(fundamentals)}/{len(tickers)} ticker 從 hardcoded 載入"
+            + (f"（{failed_count} 失敗）" if failed_count else "")
+        )
+        return 0
+
     fixtures_path.write_text(
         json.dumps(fixture_data, indent=2, ensure_ascii=False),
         encoding="utf-8",
@@ -403,7 +437,7 @@ def main() -> int:
     print(f"\n💾 Fixtures 寫到 {fixtures_path}")
     print(
         f"✅ {len(fundamentals)}/{len(tickers)} ticker 成功"
-        + (f"（失敗：{failed}）" if failed else "")
+        + (f"（{failed_count} 失敗）" if failed_count else "")
     )
     return 0
 
