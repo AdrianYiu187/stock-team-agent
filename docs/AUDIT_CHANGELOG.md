@@ -300,3 +300,87 @@
 2. 3690.HK 即使 macro 中性化仍 sell（fund_score 0.387 outlier：ROE -24% / PEG 28.72）
 3. 對沖旗標 = HK 偏賣的真實 attribution 工具
 4. 對沖 ≠ 永久 fix：實戰不建議關掉 macro（macro 是真實 macro 環境的反映）
+
+---
+
+## v5.30 — 7D per-region weight tuning + dashboard per-region toggle (2026-06-30)
+
+**Branch HEAD**: `41abb53`  
+**Tag**: `audit-v5.30-2026-06-30`
+
+### v5.30 P1 — `cn_macro_heavy` 升級為 7D 預設 + FALLBACK 機制
+
+**量化結果**（`quantify_v529_per_region_sensitivity.py` 5 configs × 3 regions）：
+
+| Weight Config | Tech | Fund | Market | Risk | Sent | News | Macro | Global Pearson | vs v5.28 |
+|---------------|------|------|--------|------|------|------|-------|----------------|----------|
+| v5.28 default (`global_7d_balanced_0_15`) | 0.18 | 0.37 | 0.13 | 0.12 | 0.10 | 0.05 | 0.05 | +0.6549 | baseline |
+| **`cn_macro_heavy` (v5.30 NEW default)** | **0.10** | **0.25** | **0.10** | **0.05** | **0.15** | **0.10** | **0.25** | **+0.7730** | **+11.81pp** |
+| `full_7d_fund_heavy` | 0.05 | 0.55 | 0.05 | 0.05 | 0.10 | 0.10 | 0.10 | +0.6611 | +0.62pp |
+| `tech_sentiment_heavy` | 0.30 | 0.10 | 0.10 | 0.05 | 0.30 | 0.10 | 0.05 | +0.5523 | -10.26pp |
+| `balanced` | 0.14 | 0.14 | 0.14 | 0.14 | 0.15 | 0.15 | 0.14 | +0.6230 | -3.19pp |
+
+**關鍵 bug fix**: `WEIGHT_CONFIGS["global_7d_balanced_0_15"]` 原本用 `dict(MULTIFACTOR_WEIGHTS_7D)` (reference 共享) — 當 v5.30 升級預設為 `cn_macro_heavy` 時 baseline config 也跟著變,失去 v5.28 語意。改用 `dict(MULTIFACTOR_WEIGHTS_7D_FALLBACK)` 鎖定 v5.28 值快照。
+
+**FALLBACK 設計**: 保留 `MULTIFACTOR_WEIGHTS_7D_FALLBACK = full_7d_balanced_0_15`,因 per-region 反轉結論顯示 CN region 4 ticker 樣本中 4D 反而最穩。新增 `apply_7d_weights_v530(components, weights=None)` 函數,`weights=None` 走預設,`weights=FALLBACK` 走舊版。
+
+**Lesson #56 (NEW permanent)**: 7D 預設值必須來自 candidate 量化 (`quantify_v528_7d_candidate.py` → `quantify_v529_per_region_sensitivity.py` pipeline),不能任意設定。
+
+### v5.30 P2 — 擴大 US/HK sample 解鎖 per-region 結論
+
+**問題**: 原始 fixture 只有 4 US ticker + 3 HK ticker,Pearson 變異為 0,無法下 per-region 結論。
+
+**解決方案**: `scripts/snapshot_more_tickers.py` 從 S&P 500 抓 6 US ticker (AMZN/META/TSLA/JPM/V/JNJ),Hang Seng 抓 6 HK ticker (0941/1299/0388/2318/2628/1177)。`extended_signal_distribution_per_ticker` fixture 從 11 → 23 ticker。
+
+**Price-derived 7D proxy 設計**（簡化 7D pipeline 避免 e2e sentiment/news/macro 複雜度）：
+- `tech` = 20d_momentum (close - close_20d_ago) / close_20d_ago
+- `market` = 52w_position (current vs 52w high/low)
+- `risk` = 1 - annualized_vol (clip 0-1)
+- `fund` / `sentiment` / `news` / `macro` = 0.5 (中性 fallback, 標記 `is_proxy=True`)
+
+**per-region 擴充後 Pearson 結果** (`quantify_v530_per_region_extended.py`):
+
+| Region | n 樣本 | best config | Pearson | 門檻 (>0.3) | 結論 |
+|--------|--------|-------------|---------|-------------|------|
+| **US** | 10 | `hk_fund_heavy` | **+0.7100** | ✅ 解鎖 | US 樣本最佳策略與 HK 名稱相似（fund 權重高） |
+| **HK** | 9 | `global_4d_fund_heavy` | +0.0000 | ❌ | proxy 6 支全 sell, variance=0 (方法論限制非樣本量) |
+| **CN** | 4 | `global_4d_fund_heavy` | +0.9452 | ✅ | 保留 v5.29 反轉結論 (4D 反而最穩) |
+
+**HK 樣本限制**: 6 支 HK proxy (0941/1299/0388/2318/2628/1177) 2025-2026 半年空頭,signal 全 sell,variance=0 → Pearson undefined。修正方向需改換採樣期或整合 yfinance 真實 sentiment/news/macro pipeline,非再抓 ticker。
+
+### v5.30 P3 — Dashboard per-region toggle
+
+**Frontend (dashboard/index.html)**:
+- 新增 `#region-toggle` (Global/US/HK/CN 4 buttons)
+- 新增 `setRegion()` async handler: 切到 7D 模式 + 帶 `region` query param
+- 新增 `loadRegionConfig()` 從 `/api/config` 載入 per_region_weights_7d
+- `currentRegion` + `regionConfig` JS state
+- `renderCard` 在 7D 模式顯示 region badge (彩色 chip) + advice tip box (`💡 hk_fund_heavy (Pearson +0.71)`)
+- subtitle/footer 升級為 v5.30 + Lesson #56 標記
+
+**Backend (scripts/dashboard_api.py)**:
+- `/api/cross_market_7d?region=US|HK|CN|global` query param 自動套用該區最佳 weight config
+- `/api/cross_market_7d` 回傳 `per_ticker[t].region` + `.advice`
+- `/api/config` 暴露 `per_region_weights_7d` + `ticker_region_map` + `available_regions`
+- `PER_REGION_WEIGHTS_7D` 對應 4 個 region:
+  - `US` = `hk_fund_heavy` (Pearson +0.7100)
+  - `HK` = `global_4d_fund_heavy` (proxy 全 sell 限制下的保守預設)
+  - `CN` = `global_4d_fund_heavy` (反轉結論, 4D 反而最佳)
+  - `global` = `cn_macro_heavy` (v5.30 預設, Pearson +0.7730)
+
+**TDD guards**:
+- `test_dashboard_api.py`: 修 2 個既有 v5.28 guards (per_ticker shape 加 region/advice, version 5.28.0→5.30.0) + 5 個新 P3 region API guards
+- `test_dashboard_smoke.py`: 5 個新 P3 region frontend guards
+- `test_v530_p3_per_region.py`: 8 個新 P3 backend region guards
+
+**Regression**: 526 → 539 passed (+13 = 8 backend + 5 frontend), 1 skipped, 0 failed
+
+### Commits
+| SHA | Description |
+|-----|-------------|
+| `41abb53` | feat(v5.30 P3): dashboard per-region toggle (#region-toggle UI + ?region API) |
+| `8b571ba` | docs(v5.30 closure): AUDIT_CHANGELOG v5.30 + Lesson #56 + tag audit-v5.30-2026-06-30 |
+| `bb7d320` | feat(v5.30 P1 green): cn_macro_heavy 升級為 7D 預設 + FALLBACK |
+| `8cbaeea` | test(v5.30 P1 red): 5 TDD guards (red) |
+| `e1d3e12` | feat(v5.29 candidate): per-region 7D weight sensitivity 量化 |
+| `d67bbaf` | feat(v5.30 P2): 擴大 US/HK sample 解鎖 per-region 結論 |
