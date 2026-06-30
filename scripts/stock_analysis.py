@@ -563,7 +563,8 @@ def sentiment_score_multifactor(combined_score: float, confidence: float, news_c
     conf_clamped = max(0.0, min(1.0, confidence))
     conf_factor = 0.5 + 0.5 * conf_clamped  # [0.5, 1.0]
 
-    # news_count 因子：0 條 → 0.4，30 條 → 0.7，60 條 → 0.9，≥120 → 0.95
+    # news_count 因子：0 條 → 0.4，30 條 → 0.7，60 條 → 0.9，120 條 → 0.95，500+ 條 → 1.0
+    # v5.19 (N17) 修復: 120 → cap 0.95 改成 120→500 漸進至 1.0（避免極端新聞量 flatline）
     if news_count <= 0:
         nc_factor = 0.40
     elif news_count < 30:
@@ -572,8 +573,10 @@ def sentiment_score_multifactor(combined_score: float, confidence: float, news_c
         nc_factor = 0.70 + 0.20 * (news_count - 30) / 30
     elif news_count < 120:
         nc_factor = 0.90 + 0.05 * (news_count - 60) / 60
+    elif news_count < 500:
+        nc_factor = 0.95 + 0.05 * (news_count - 120) / 380
     else:
-        nc_factor = 0.95  # 極端覆蓋 → cap
+        nc_factor = 1.0  # 真正極端覆蓋（>500 條）→ 滿分
 
     score = cs_factor * 0.7 + conf_factor * 0.2 + nc_factor * 0.1
     return max(0.0, min(1.0, score))
@@ -596,29 +599,37 @@ def news_score_multifactor(news_count: int, region_count: int, source_diversity:
     - score > 0.6 → 覆蓋良好
     - score < 0.4 → 覆蓋不足
     """
-    # news_count 因子：線性 0 (0 條) → 0.95 (≥120 條)
+    # news_count 因子：線性 0 (0 條) → 0.95 (120 條) → 1.0 (500+ 條)
+    # v5.19 (N18) 修復: ≥120 cap 0.95 改成 120→500 漸進至 1.0
     if news_count <= 0:
         nc_factor = 0.0
     elif news_count < 120:
         nc_factor = 0.95 * news_count / 120
+    elif news_count < 500:
+        nc_factor = 0.95 + 0.05 * (news_count - 120) / 380
     else:
-        nc_factor = 0.95  # 極端覆蓋 → cap
+        nc_factor = 1.0  # 真正極端覆蓋 → 滿分
 
-    # region_count 因子：線性 0.3 (0 區) → 0.95 (5+ 區, v5.15 P43)
+    # region_count 因子：線性 0.3 (0 區) → 0.95 (5 區) → 1.0 (12+ 區)
+    # v5.19 (N19) 修復: ≥5 cap 0.95 改成 5→12 漸進至 1.0（6+ 區域仍能區分）
     if region_count <= 0:
         rc_factor = 0.30
     elif region_count < 5:
         rc_factor = 0.30 + 0.65 * region_count / 5
+    elif region_count < 12:
+        rc_factor = 0.95 + 0.05 * (region_count - 5) / 7
     else:
-        rc_factor = 0.95  # 5+ 區域 → cap（保護極端輸入）
+        rc_factor = 1.0  # 12+ 區域 → 滿分
 
-    # source_diversity 因子：線性 0.3 (1 源) → 0.95 (12+ 源, v5.15 P44)
+    # source_diversity 因子：線性 0.3 (1 源) → 0.95 (12 源) → 1.0 (30+ 源)
     if source_diversity <= 1:
         sd_factor = 0.30
     elif source_diversity < 12:
         sd_factor = 0.30 + 0.65 * (source_diversity - 1) / 11
+    elif source_diversity < 30:
+        sd_factor = 0.95 + 0.05 * (source_diversity - 12) / 18
     else:
-        sd_factor = 0.95  # 12+ 來源 → cap（保護極端輸入）
+        sd_factor = 1.0  # 30+ 來源 → 滿分
 
     score = nc_factor * 0.5 + rc_factor * 0.3 + sd_factor * 0.2
     return max(0.0, min(1.0, score))
