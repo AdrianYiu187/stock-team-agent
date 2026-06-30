@@ -308,10 +308,22 @@ def market_score_multifactor(ytd_return: float, pos_52wk: float, from_high_pct: 
         ytd_factor = 1.0  # ytd > +200 極端趨勢 → cap 最高
 
     # Beta 因子
-    if beta <= 1.2:
-        beta_factor = 1.0
+    # v5.22 (Stage B-0) P43 修復: beta > 1.2 floor 0.7 → continuous linear decay
+    # 舊 v5.21: beta > 1.2 → 線性但 floor 0.7 → beta=2.0 (0.84) → beta=3.0 (0.7) → beta=4.0 (0.7, flat)
+    # 真實 pitfall (Stage B-0 N=50000): 30.92% 真實樣本 beta > 1.2
+    # 新設計: 連續線性 beta ∈ [0, 3.0] → beta_factor ∈ [1.0, 0.40], 無 floor
+    #   beta = 1.0 (市場同步) → 1.0 (中性)
+    #   beta = 1.5 (高波動) → 0.80
+    #   beta = 2.0 (投機股) → 0.60
+    #   beta = 2.5 (高槓桿) → 0.50
+    #   beta > 3.0 異常 → clip 0.40
+    if beta <= 1.0:
+        beta_factor = 1.0  # 低 beta / 防禦股 = 中性偏正向
+    elif beta <= 3.0:
+        # 線性 1.0 (beta=1.0) → 0.40 (beta=3.0)
+        beta_factor = 1.0 - 0.60 * (beta - 1.0) / 2.0
     else:
-        beta_factor = max(0.7, 1.0 - (beta - 1.2) * 0.2)
+        beta_factor = 0.40  # 異常高 beta (>3.0) → clip 強 sell
 
     score = dd_factor * 0.5 + pos_factor * 0.3 + ytd_factor * 0.15 + beta_factor * 0.05
     return max(0.0, min(1.0, score))
