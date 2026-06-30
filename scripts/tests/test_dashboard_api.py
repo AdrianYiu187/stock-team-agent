@@ -54,10 +54,10 @@ class TestDashboardConfig(unittest.TestCase):
         self.assertIn("mock", data["available_close_sources"])
 
     def test_config_weights_match_fund_heavy(self):
-        """A4: config.weights 與 /api/health.weights 一致"""
+        """A4: config.weights_4d 與 /api/health.weights 一致 (v5.28 用 weights_4d key)"""
         h = client.get("/api/health").json()
         c = client.get("/api/config").json()
-        self.assertEqual(h["weights"], c["weights"])
+        self.assertEqual(h["weights"], c["weights_4d"])
 
 
 class TestDashboardCrossMarket(unittest.TestCase):
@@ -140,6 +140,83 @@ class TestDashboardErrorHandling(unittest.TestCase):
         """A13: ?close_source=invalid → 422 Unprocessable Entity (Pydantic Literal)"""
         r = client.get("/api/cross_market?close_source=invalid")
         self.assertEqual(r.status_code, 422)
+
+
+class TestDashboard7DEndpoint(unittest.TestCase):
+    """v5.28 P2 — /api/cross_market_7d + /api/config weights_7d 鎖定"""
+
+    def test_config_exposes_weights_7d(self):
+        """A14: GET /api/config 含 weights_7d = full_7d_balanced_0_15"""
+        r = client.get("/api/config")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn("weights_7d", data)
+        w = data["weights_7d"]
+        self.assertEqual(set(w.keys()), {"tech", "fund", "market", "risk", "sentiment", "news", "macro"})
+        self.assertAlmostEqual(w["tech"], 0.18, places=4)
+        self.assertAlmostEqual(w["fund"], 0.37, places=4)
+        self.assertAlmostEqual(w["macro"], 0.05, places=4)
+        self.assertAlmostEqual(sum(w.values()), 1.0, places=4)
+
+    def test_config_exposes_weights_4d(self):
+        """A15: GET /api/config 改用 weights_4d key (v5.27 向後相容 breaking)"""
+        r = client.get("/api/config")
+        data = r.json()
+        self.assertIn("weights_4d", data)
+        self.assertNotIn("weights", data, "v5.28 改成 weights_4d 取代 weights key")
+        w = data["weights_4d"]
+        self.assertAlmostEqual(w["fund"], 0.50, places=4)
+
+    def test_7d_endpoint_returns_all_11_tickers(self):
+        """A16: GET /api/cross_market_7d 不帶 ticker filter → 11 個 ticker"""
+        r = client.get("/api/cross_market_7d")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(len(data["per_ticker"]), 11)
+
+    def test_7d_endpoint_per_ticker_shape(self):
+        """A17: per_ticker[AAPL] 必須含 7 維度 + composite_7d + signal"""
+        r = client.get("/api/cross_market_7d")
+        data = r.json()
+        aapl = data["per_ticker"]["AAPL"]
+        expected_keys = {
+            "tech", "fund", "market", "risk",
+            "sentiment", "news", "macro",
+            "composite_7d", "signal",
+            "majority", "buy_ratio", "hold_ratio", "sell_ratio",
+        }
+        self.assertEqual(set(aapl.keys()), expected_keys)
+        self.assertIn(aapl["signal"], {"BUY", "HOLD", "SELL"})
+
+    def test_7d_endpoint_config_block(self):
+        """A18: response.config 含 weights_7d + source + version"""
+        r = client.get("/api/cross_market_7d")
+        data = r.json()
+        cfg = data["config"]
+        self.assertEqual(cfg["source"], "fixture_signal_distribution_per_ticker")
+        self.assertEqual(cfg["version"], "5.28.0")
+        self.assertIn("macro", cfg["weights_7d"])
+
+    def test_7d_endpoint_ticker_filter(self):
+        """A19: ?tickers=AAPL,MSFT → 只回這 2 個 ticker"""
+        r = client.get("/api/cross_market_7d?tickers=AAPL,MSFT")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(set(data["per_ticker"].keys()), {"AAPL", "MSFT"})
+
+    def test_7d_endpoint_invalid_ticker_ignored(self):
+        """A20: ?tickers=AAPL,DOES_NOT_EXIST → 忽略無效 ticker (只回 AAPL)"""
+        r = client.get("/api/cross_market_7d?tickers=AAPL,DOES_NOT_EXIST")
+        data = r.json()
+        self.assertEqual(set(data["per_ticker"].keys()), {"AAPL"})
+
+    def test_7d_composite_in_valid_range(self):
+        """A21: 所有 ticker 的 composite_7d 必須 ∈ [0.0, 1.0]"""
+        r = client.get("/api/cross_market_7d")
+        data = r.json()
+        for ticker, info in data["per_ticker"].items():
+            self.assertGreaterEqual(info["composite_7d"], 0.0, f"{ticker} composite_7d < 0")
+            self.assertLessEqual(info["composite_7d"], 1.0, f"{ticker} composite_7d > 1")
 
 
 if __name__ == "__main__":

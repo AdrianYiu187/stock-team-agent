@@ -1,9 +1,10 @@
-"""v5.27 Step 2 — FastAPI 後端,串接 dashboard 與 run_cross_market_comparison。
+"""v5.27 Step 2 + v5.28 P2 — FastAPI 後端,串接 dashboard 與 run_cross_market_comparison。
 
 提供:
-- GET /api/cross_market?close_source=real|mock → cross-market backtest 結果
+- GET /api/cross_market?close_source=real|mock → cross-market backtest 結果 (4D)
+- GET /api/cross_market_7d?tickers=... → 7D 整合 composite (v5.28 NEW)
 - GET /api/health → 健康檢查
-- GET /api/config → 當前 MULTIFACTOR_WEIGHTS + close_source 預設
+- GET /api/config → 當前 MULTIFACTOR_WEIGHTS + MULTIFACTOR_WEIGHTS_7D + close_source 預設
 
 啟動:
     cd ~/stock-team-agent
@@ -12,8 +13,10 @@
 前端串接:
     fetch('http://localhost:8080/api/cross_market?close_source=real')
       .then(r => r.json()).then(render)
+    fetch('http://localhost:8080/api/cross_market_7d')
+      .then(r => r.json()).then(render7d)
 
-TDD: scripts/tests/test_dashboard_api.py 5 個 guards
+TDD: scripts/tests/test_dashboard_api.py 13 個 guards
 """
 
 import json
@@ -32,6 +35,8 @@ sys.path.insert(0, str(_SCRIPTS_DIR))
 
 from backtest_v511_multifactor import (  # noqa: E402
     MULTIFACTOR_WEIGHTS,
+    MULTIFACTOR_WEIGHTS_7D,
+    apply_7d_weights,
     run_cross_market_comparison,
 )
 
@@ -42,8 +47,8 @@ from backtest_v511_multifactor import (  # noqa: E402
 
 app = FastAPI(
     title="Stock Team Agent — Operator Dashboard API",
-    description="v5.27 — fund_heavy weights + real close prices backtest",
-    version="5.27.0",
+    description="v5.28 — fund_heavy 4D + 7D 整合層 (sentiment+news+macro)",
+    version="5.28.0",
 )
 
 # CORS for dashboard/index.html 本地開發
@@ -131,19 +136,30 @@ def health() -> HealthResponse:
     """健康檢查 + 當前 weights。"""
     return HealthResponse(
         status="ok",
-        version="5.27.0",
+        version="5.28.0",
         weights=dict(MULTIFACTOR_WEIGHTS),
     )
 
 
 @app.get("/api/config", response_model=dict)
 def config() -> dict:
-    """當前 MULTIFACTOR_WEIGHTS + close_source 預設。"""
+    """當前 MULTIFACTOR_WEIGHTS + MULTIFACTOR_WEIGHTS_7D + close_source 預設。
+
+    Response shape:
+        {
+            "weights_4d": {...},       # fund_heavy (4 keys)
+            "weights_7d": {...},       # full_7d_balanced_0_15 (7 keys, v5.28 NEW)
+            "close_source_default": "real",
+            "available_close_sources": ["mock", "real"],
+            "version": "5.28.0"
+        }
+    """
     return {
-        "weights": dict(MULTIFACTOR_WEIGHTS),
+        "weights_4d": dict(MULTIFACTOR_WEIGHTS),
+        "weights_7d": dict(MULTIFACTOR_WEIGHTS_7D),
         "close_source_default": "real",
         "available_close_sources": ["mock", "real"],
-        "version": "5.27.0",
+        "version": "5.28.0",
     }
 
 
@@ -178,6 +194,94 @@ def cross_market(
     payload["close_source"] = close_source  # explicit echo
 
     return JSONResponse(content=payload)
+
+
+@app.get("/api/cross_market_7d")
+def cross_market_7d(
+    tickers: Optional[str] = Query(
+        default=None,
+        description="comma-separated ticker list, default = 全部 11 (filter 從 fixture)",
+    ),
+) -> JSONResponse:
+    """v5.28 P2 — 7D 整合 composite per ticker。
+
+    直接從 fixture `signal_distribution_per_ticker[t].components` 取 7 維度預計算分數,
+    套用 `MULTIFACTOR_WEIGHTS_7D` 加權, 輸出 composite + signal + 各維度分數。
+
+    Response shape:
+        {
+            "config": {
+                "weights_7d": {...},
+                "source": "fixture_signal_distribution_per_ticker",
+                "version": "5.28.0"
+            },
+            "per_ticker": {
+                "AAPL": {
+                    "tech": 0.5, "fund": 0.5914, "market": 0.5, "risk": 0.5,
+                    "sentiment": 0.5167, "news": 0.5, "macro": 0.463,
+                    "composite_7d": 0.5285,
+                    "signal": "HOLD",
+                    "majority": "buy",
+                    "buy_ratio": 0.3815, "hold_ratio": 0.3092, "sell_ratio": 0.3092
+                },
+                ...
+            }
+        }
+    """
+    fixture_path = (
+        Path(__file__).resolve().parent
+        / "tests" / "fixtures" / "tickers_fundamentals.json"
+    )
+    with open(fixture_path) as f:
+        fixture = json.load(f)
+
+    sd = fixture["signal_distribution_per_ticker"]
+    if tickers:
+        ticker_list = [t.strip() for t in tickers.split(",") if t.strip()]
+        sd = {t: sd[t] for t in ticker_list if t in sd}
+
+    per_ticker = {}
+    for ticker, info in sd.items():
+        comps_raw = info["components"]
+        # fixture key mapping: technical → tech, fundamental → fund
+        components_7d = {
+            "tech": comps_raw["technical"],
+            "fund": comps_raw["fundamental"],
+            "market": comps_raw["market"],
+            "risk": comps_raw["risk"],
+            "sentiment": comps_raw["sentiment"],
+            "news": comps_raw["news"],
+            "macro": comps_raw["macro"],
+        }
+        composite_7d = apply_7d_weights(components_7d)
+        # 與 4D 共用 signal threshold (composite_to_signal: >0.58 BUY / <0.45 SELL / else HOLD)
+        if composite_7d > 0.58:
+            signal = "BUY"
+        elif composite_7d < 0.45:
+            signal = "SELL"
+        else:
+            signal = "HOLD"
+
+        per_ticker[ticker] = {
+            **components_7d,
+            "composite_7d": composite_7d,
+            "signal": signal,
+            "majority": info["majority"],
+            "buy_ratio": info["buy_ratio"],
+            "hold_ratio": info["hold_ratio"],
+            "sell_ratio": info["sell_ratio"],
+        }
+
+    return JSONResponse(
+        content={
+            "config": {
+                "weights_7d": dict(MULTIFACTOR_WEIGHTS_7D),
+                "source": "fixture_signal_distribution_per_ticker",
+                "version": "5.28.0",
+            },
+            "per_ticker": per_ticker,
+        }
+    )
 
 
 # ============================================================================

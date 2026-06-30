@@ -106,6 +106,47 @@ def test_no_console_errors_in_static_load():
     print("✓ no obvious JS errors in static load")
 
 
+def test_html_has_dimension_toggle():
+    """v5.28 P2 — 4D / 7D toggle 必須存在於 #dim-toggle container"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert 'id="dim-toggle"' in html, "缺 4D/7D dimension toggle container"
+    assert "setDimension" in html, "缺 setDimension() handler"
+    assert "fetchCrossMarket7D" in html, "缺 fetchCrossMarket7D() call"
+    # 4D 與 7D 按鈕
+    assert ">4D<" in html, "缺 4D button"
+    assert ">7D<" in html, "缺 7D button"
+    print("✓ dimension toggle 4D/7D exists with handler")
+
+
+def test_html_separates_src_and_dim_toggles():
+    """v5.28 P2 — close_source toggle 與 dimension toggle 必須分離 (id 不同)"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert 'id="src-toggle"' in html, "缺 src-toggle container"
+    assert 'id="dim-toggle"' in html, "缺 dim-toggle container"
+    # 確保 setCloseSource 只 querySelectorAll src-toggle (不會清除 dim-toggle 的 active 狀態)
+    assert "setCloseSource" in html
+    src_block = html[html.find("async function setCloseSource"):html.find("async function setDimension")]
+    assert "'#src-toggle button'" in src_block, "setCloseSource 必須 scope 到 src-toggle"
+    print("✓ src-toggle 與 dim-toggle 分離, setCloseSource scope 正確")
+
+
+def test_html_renders_7d_composite_when_mode_7d():
+    """v5.28 P2 — renderCard() 必須在 7D 模式顯示 composite_7d 而非 final_score"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "is7D" in html, "renderCard() 缺 is7D 模式判斷"
+    assert "composite_7d" in html, "缺 composite_7d 引用"
+    assert "render7D()" in html, "缺 render7D() function"
+    assert "render4D()" in html, "缺 render4D() function (從原 render() 拆出)"
+    print("✓ renderCard 支援 4D/7D 模式切換")
+
+
+def test_html_7d_endpoint_url():
+    """v5.28 P2 — fetchCrossMarket7D() 必須指向 /api/cross_market_7d"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "/api/cross_market_7d" in html, "缺 /api/cross_market_7d URL"
+    print("✓ 7D endpoint URL exists")
+
+
 def main():
     tests = [
         test_html_exists,
@@ -120,6 +161,10 @@ def main():
         test_html_has_signal_distribution_bar,
         test_html_dark_theme,
         test_no_console_errors_in_static_load,
+        test_html_has_dimension_toggle,
+        test_html_separates_src_and_dim_toggles,
+        test_html_renders_7d_composite_when_mode_7d,
+        test_html_7d_endpoint_url,
     ]
     for t in tests:
         t()

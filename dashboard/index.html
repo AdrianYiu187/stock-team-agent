@@ -199,10 +199,14 @@
   <header>
     <div>
       <h1>Stock Team Agent — Operator Dashboard</h1>
-      <div class="subtitle">v5.27 · 11 tickers · real close prices · fund_heavy weights</div>
+      <div class="subtitle">v5.28 · 11 tickers · 4D fund_heavy + 7D sentiment/news/macro · real close prices</div>
     </div>
     <div class="controls">
-      <div class="toggle">
+      <div class="toggle" id="dim-toggle">
+        <button class="active" onclick="setDimension('4d')">4D</button>
+        <button onclick="setDimension('7d')">7D</button>
+      </div>
+      <div class="toggle" id="src-toggle">
         <button class="active" onclick="setCloseSource('real')">real</button>
         <button onclick="setCloseSource('mock')">mock</button>
       </div>
@@ -215,8 +219,8 @@
   </div>
 
   <footer>
-    <div>Source: <code>scripts/tests/fixtures/tickers_fundamentals.json</code></div>
-    <div style="margin-top:4px;">v5.26 Lesson #54 — close_source=real 為 score-based 決策標準</div>
+    <div>Source: <code>scripts/tests/fixtures/tickers_fundamentals.json</code> · API: <code>scripts/dashboard_api.py</code></div>
+    <div style="margin-top:4px;">v5.26 Lesson #54 (close_source=real) · v5.28 Lesson #55 (4D→7D)</div>
   </footer>
 
   <script>
@@ -231,11 +235,19 @@
 
     let currentData = null;
     let currentSource = 'real';
+    let currentDimension = '4d';   // '4d' (default) 或 '7d' (v5.28 NEW)
 
     async function fetchCrossMarket(closeSource) {
       const url = `http://localhost:8080/api/cross_market?close_source=${closeSource}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+      return res.json();
+    }
+
+    async function fetchCrossMarket7D() {
+      const url = `http://localhost:8080/api/cross_market_7d`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`7D API ${res.status}: ${res.statusText}`);
       return res.json();
     }
 
@@ -263,13 +275,17 @@
 
     async function setCloseSource(src) {
       currentSource = src;
-      document.querySelectorAll('.toggle button').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('#src-toggle button').forEach(b => b.classList.remove('active'));
       event.target.classList.add('active');
 
       // 重抓 API 數據 (real ↔ mock 真實切換)
       document.getElementById('grid').innerHTML = '<div class="loading">載入 ' + src + ' 數據中…</div>';
       try {
-        currentData = await fetchCrossMarket(src);
+        if (currentDimension === '7d') {
+          currentData = await fetchCrossMarket7D();
+        } else {
+          currentData = await fetchCrossMarket(src);
+        }
       } catch (e) {
         // API 失敗 → 用 fixture fallback (僅 real 模式有效)
         try {
@@ -280,6 +296,27 @@
             '<div class="error">切換失敗: ' + e.message + '</div>';
           return;
         }
+      }
+      render();
+    }
+
+    async function setDimension(dim) {
+      // dim ∈ {'4d', '7d'}
+      currentDimension = dim;
+      document.querySelectorAll('#dim-toggle button').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+
+      document.getElementById('grid').innerHTML = '<div class="loading">載入 ' + dim.toUpperCase() + ' 數據中…</div>';
+      try {
+        if (dim === '7d') {
+          currentData = await fetchCrossMarket7D();
+        } else {
+          currentData = await fetchCrossMarket(currentSource);
+        }
+      } catch (e) {
+        document.getElementById('grid').innerHTML =
+          '<div class="error">' + dim.toUpperCase() + ' 切換失敗: ' + e.message + '<br><br>請確認 dashboard_api 已啟動: <code>cd ~/stock-team-agent && python -m uvicorn scripts.dashboard_api:app --port 8080</code></div>';
+        return;
       }
       render();
     }
@@ -329,6 +366,19 @@
     function renderCard(ticker, data) {
       const risk = classifyRisk(ticker);
       const c = data.components;
+      const is7D = currentDimension === '7d';
+
+      // 7D 模式: 顯示 composite_7d + signal (來自 7D API); 4D 模式: 顯示 final_score + majority
+      const topScore = is7D ? data.composite_7d.toFixed(4) : data.final_score.toFixed(4);
+      const topSignal = is7D ? data.signal : data.majority.toUpperCase();
+      const topSignalColor = topSignal === 'BUY' || topSignal === 'buy'
+        ? 'var(--buy)'
+        : topSignal === 'SELL' || topSignal === 'sell'
+          ? 'var(--sell)'
+          : 'var(--hold)';
+      const topLabel = is7D ? 'composite_7d' : 'final_score';
+      const topSourceLabel = is7D ? 'signal (7D)' : 'majority';
+
       return `
         <div class="card">
           <div class="card-header">
@@ -346,12 +396,12 @@
             <div class="signal-sell" style="width:${data.sell_ratio*100}%"></div>
           </div>
           <div class="score-row">
-            <span class="score-label">majority</span>
-            <span class="score-value" style="color:var(--${data.majority === 'buy' ? 'buy' : data.majority === 'sell' ? 'sell' : 'hold'})">${data.majority.toUpperCase()}</span>
+            <span class="score-label">${topSourceLabel}</span>
+            <span class="score-value" style="color:${topSignalColor}">${topSignal}</span>
           </div>
           <div class="score-row">
-            <span class="score-label">final_score</span>
-            <span class="score-value">${data.final_score.toFixed(4)}</span>
+            <span class="score-label">${topLabel}</span>
+            <span class="score-value">${topScore}</span>
           </div>
           <div class="score-row">
             <span class="score-label">signal_entropy</span>
@@ -371,11 +421,88 @@
     }
 
     function render() {
-      if (!currentData || !currentData.signal_distribution_per_ticker) return;
+      if (!currentData) return;
+      // 7D 模式: data 結構是 {config, per_ticker[AAPL].components + composite_7d + signal}
+      // 4D 模式: data 結構是 cross_market_comparison() 或 fixture signal_distribution_per_ticker
+      if (currentDimension === '7d') {
+        render7D();
+      } else {
+        if (!currentData.signal_distribution_per_ticker) return;
+        render4D();
+      }
+    }
+
+    function render4D() {
       renderSummary();
       const sd = currentData.signal_distribution_per_ticker;
       const tickers = Object.keys(sd).sort();
       const html = tickers.map(t => renderCard(t, sd[t])).join('');
+      document.getElementById('grid').innerHTML = html;
+    }
+
+    function render7D() {
+      const pt = currentData.per_ticker;
+      const tickers = Object.keys(pt).sort();
+
+      // Summary: 7D 版本的 BUY/HOLD/SELL count 來自 per_ticker[t].signal
+      const buyCount = tickers.filter(t => pt[t].signal === 'BUY').length;
+      const holdCount = tickers.filter(t => pt[t].signal === 'HOLD').length;
+      const sellCount = tickers.filter(t => pt[t].signal === 'SELL').length;
+      const highRiskCount = tickers.filter(t => HIGH_RISK_TICKERS.has(t)).length;
+      const meanComposite7d = (tickers.reduce((a, t) => a + pt[t].composite_7d, 0) / tickers.length).toFixed(4);
+
+      document.getElementById('summary').innerHTML = `
+        <div class="stat">
+          <div class="stat-label">Tickers</div>
+          <div class="stat-value">${tickers.length}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">7D BUY</div>
+          <div class="stat-value" style="color:var(--buy)">${buyCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">7D HOLD</div>
+          <div class="stat-value" style="color:var(--hold)">${holdCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">7D SELL</div>
+          <div class="stat-value" style="color:var(--sell)">${sellCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">HIGH-Risk</div>
+          <div class="stat-value" style="color:var(--high-risk)">${highRiskCount}</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Mean composite_7d</div>
+          <div class="stat-value">${meanComposite7d}</div>
+        </div>
+      `;
+
+      // 把 7D per_ticker 結構 map 成 card 期望的結構 (補 signal_entropy / buy_ratio 等)
+      const cardData = {};
+      for (const ticker of tickers) {
+        const d = pt[ticker];
+        cardData[ticker] = {
+          buy_ratio: d.buy_ratio,
+          hold_ratio: d.hold_ratio,
+          sell_ratio: d.sell_ratio,
+          majority: d.majority,
+          final_score: d.composite_7d,
+          composite_7d: d.composite_7d,
+          signal: d.signal,
+          signal_entropy: 0,  // 7D 沒信號熵 (純 composite)
+          components: {
+            market: d.market,
+            technical: d.tech,
+            fundamental: d.fund,
+            risk: d.risk,
+            sentiment: d.sentiment,
+            news: d.news,
+            macro: d.macro,
+          },
+        };
+      }
+      const html = tickers.map(t => renderCard(t, cardData[t])).join('');
       document.getElementById('grid').innerHTML = html;
     }
 
