@@ -459,14 +459,22 @@ def fund_score_multifactor(pe: float, roe: float, peg_val: "Optional[float]", re
         roe_factor = 0.95  # roe > 300% 異常高 → cap
 
     # v5.11 (Stage 4.2) N9 修復: PEG [0.3, 1.0] 全 0.9190 + [3, 5] 全 0.7590（雙 cap flatline）
-    # 統一為 PEG 0.1-5 連續線性（高分 = PEG 低估 / 低分 = PEG 高估）
+    # v5.22 (Stage B-0) P42 修復: PEG > 5 cap 0.10 → continuous decay (8.19% 真實樣本 cap-zone)
+    # 舊 v5.21: peg > 5 一律 0.10 floor → PEG=6, 8, 15 完全相同 (flat pitfall)
+    # 新設計: exponential decay, 保留「PEG > 5 = 高估」語義
+    #   PEG ∈ [0, 5]: 線性 0.95 → 0.10 (N9 已修, 不變)
+    #   PEG ∈ [5, 25]: 衰減 0.10 → 0.02 (PEG=10→0.037, PEG=15→0.014)
+    #   PEG > 25: clip 0.0
     if peg_val is None or peg_val <= 0:
         peg_factor = 0.5  # 無 PEG → 中性
     elif peg_val <= 5:
-        # 線性 0.95 (PEG=0.1) → 0.10 (PEG=5)
+        # 線性 0.95 (PEG=0.1) → 0.10 (PEG=5)（N9 v5.11 保留）
         peg_factor = 0.95 - 0.85 * (peg_val - 0.1) / 4.9
+    elif peg_val <= 25:
+        # v5.22 P42: 衰減 0.10 → 0.02 (slope -0.004 per unit)
+        peg_factor = 0.10 - 0.08 * (peg_val - 5) / 20
     else:
-        peg_factor = 0.10  # 極端高 PEG → cap
+        peg_factor = 0.0  # 極端高 PEG (>25) → 強 sell
 
     # v5.10 (Stage 4.3) C26 修復: 營收增長因子 — 超過 30% 漸進加分（避免 cap 0.6780）
     # v5.9 BUG: growth >= 30% 一律 0.9（無法區分 growth=30% vs growth=100%）

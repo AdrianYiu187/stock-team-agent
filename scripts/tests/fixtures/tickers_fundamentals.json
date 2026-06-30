@@ -100,7 +100,7 @@
     "NVDA": 0.6480556665974025,
     "0700.HK": 0.545338674635436,
     "9988.HK": 0.5640211486176623,
-    "3690.HK": 0.38673735584415586,
+    "3690.HK": 0.36673735584415584,
     "600519.SS": 0.5377695462009277,
     "000858.SZ": 0.5621697173588125,
     "601318.SS": 0.5653941603937848,
@@ -108,10 +108,11 @@
   },
   "std_quant": {
     "v5_10_std": 0.1211,
-    "v5_11_3_std": 0.0654,
+    "v5_11_3_std": 0.0704,
     "std_delta": -0.0556,
     "sample_size": 11,
-    "interpretation": "v5.11 std 下降 = cap 飽和幻覺消失，非 regression。當所有輸入都在合理範圍（PE 5-35 + ROE 20-140% + growth 5-17%），v5.11 線性公式自然集中在中性區（N=11 ticker）。"
+    "interpretation": "v5.11 std 下降 = cap 飽和幻覺消失，非 regression。當所有輸入都在合理範圍（PE 5-35 + ROE 20-140% + growth 5-17%），v5.11 線性公式自然集中在中性區（N=11 ticker）。",
+    "_v522_p42_update": "v5.11.3 std 0.0654 → 0.0704 (3690.HK PEG=28.72 cap removed)"
   },
   "signal_distribution_per_ticker": {
     "AAPL": {
@@ -309,7 +310,8 @@
     "fetched_at": "2026-06-28T16:57:25.900514+00:00",
     "ticker_universe_size": 11,
     "failed_tickers": [],
-    "max_age_days": 90
+    "max_age_days": 90,
+    "v522_p42_fixture_update": "3690.HK PEG=28.72 → 0 (cap removed by v5.22 P42)"
   },
   "sentiment_per_ticker": {
     "AAPL": {
