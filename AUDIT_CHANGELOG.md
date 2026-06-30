@@ -1563,3 +1563,51 @@ else:
 - extreme (nc=500, region=8, source=20): Δ +0.00119 (11/11 變)
 
 **結論**：N17/N18/N19 是「正確性」修復（無資訊丟失），不是「準確率」修復。
+
+
+## v5.20 — _json_safe np.bool_ Bug Fix（2026-06-30）
+
+### 動機
+
+E2E AAPL 跑 `python3 scripts/stock_analysis.py -c AAPL -n "Apple Inc."` 揭露：
+- `⚠️ 自動回測失敗: Object of type bool is not JSON serializable`
+- `⚠️ JSON保存失敗: Object of type bool is not JSON serializable`
+
+### Root Cause
+
+v5.7 B9 加了 `backtest_engine._json_safe()` 但 **stock_analysis.py 完全沒保護**：
+- `stock_analysis.py` line 1984 `json.dump(_result, ...)` — `_result` 含 backtest 結果的 `np.bool_` 欄位
+- `stock_analysis.py` line 2011 `import json as _json` — **冗餘 import**（頂層 line 8 已有 `import json`）
+- `stock_analysis.py` line 2016 `_json.dump(_bt, ...)` — 同樣問題
+
+### Fix (commit `079bfd3`)
+
+| File | Change |
+|------|--------|
+| `scripts/stock_analysis.py` | 加嵌套 `_json_safe()` 函數 (lazy numpy import) |
+| `scripts/stock_analysis.py` line 1984 | `json.dump(_result)` → `json.dump(_json_safe(_result))` |
+| `scripts/stock_analysis.py` line 2016 | `_json.dump(_bt)` → `json.dump(_json_safe(_bt))` |
+| `scripts/stock_analysis.py` line 2011 | 移除冗餘 `import json as _json` |
+| `scripts/tests/test_v520_json_safe_np_bool.py` | +6 永久 pytest |
+
+### Verification
+
+- pytest: 333 → **339** (+6)
+- E2E AAPL: 2 個 `⚠️` warning → **0 warning**
+- AAPL 真實綜合分 0.53 / 持有觀望 / Buy 41 + Sell 23 + Hold 8 (回測 90 天)
+
+### Lesson 30
+
+**E2E 真實跑 ≠ pytest 通過**：
+- v5.7 B9 加了守護但**只覆蓋 backtest_engine.py**
+- pytest 333 條全 pass，但 E2E 仍 fail
+- 未來審計流程必須包含：pytest pass → 至少 1 ticker E2E → 0 warning
+
+### Diff Summary
+
+```
+3 files changed, 269 insertions(+), 5 deletions(-)
+create: scripts/tests/test_v520_json_safe_np_bool.py
+modify: scripts/stock_analysis.py
+modify: SKILL.md
+```
