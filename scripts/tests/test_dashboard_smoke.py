@@ -147,6 +147,64 @@ def test_html_7d_endpoint_url():
     print("✓ 7D endpoint URL exists")
 
 
+# === v5.30 P3 — per-region toggle frontend guards ===
+
+def test_html_has_region_toggle():
+    """v5.30 P3 — #region-toggle container 必須存在 (per-region 切換 UI)"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert 'id="region-toggle"' in html, "缺 #region-toggle container"
+    print("✓ region toggle container exists")
+
+
+def test_html_region_toggle_has_four_buttons():
+    """v5.30 P3 — #region-toggle 必須有 4 個按鈕: Global/US/HK/CN"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    # 找出 region-toggle block
+    start = html.find('id="region-toggle"')
+    assert start != -1, "缺 #region-toggle"
+    # 找下一個 </div> (同層級的 controls wrapper 結束,簡化找下一個 toggle)
+    end = html.find('id="src-toggle"', start)
+    block = html[start:end]
+    # 4 個 region 按鈕
+    for label in ["Global", "US", "HK", "CN"]:
+        assert f">{label}<" in block, f"region button '{label}' missing in #region-toggle"
+    print("✓ region toggle has 4 buttons (Global/US/HK/CN)")
+
+
+def test_html_setregion_handler_exists():
+    """v5.30 P3 — setRegion() JS handler 必須存在,需 async + querySelectorAll region-toggle"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "async function setRegion" in html, "缺 async setRegion() handler"
+    # 必須 scope 到 region-toggle (不會影響其他 toggle)
+    assert "'#region-toggle button'" in html, "setRegion 必須 scope 到 region-toggle"
+    print("✓ setRegion handler exists with proper scoping")
+
+
+def test_html_region_toggle_passes_query_param():
+    """v5.30 P3 — fetchCrossMarket7D 必須帶 region query param"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    assert "region=" in html, "缺 region= query param"
+    # 確認在 7D fetch 函數內
+    start = html.find("async function fetchCrossMarket7D")
+    end = html.find("async function loadRegionConfig", start)
+    block = html[start:end]
+    assert "region=" in block, "fetchCrossMarket7D 未帶 region query param"
+    assert "currentRegion" in html, "缺 currentRegion state"
+    print("✓ fetchCrossMarket7D passes region query param")
+
+
+def test_html_card_renders_region_badge():
+    """v5.30 P3 — renderCard 必須在 7D 模式顯示 region badge 與 advice"""
+    html = DASHBOARD.read_text(encoding="utf-8")
+    # renderCard 內的 region badge 模板
+    assert "data.region" in html, "renderCard 缺 data.region 引用"
+    assert "data.advice" in html, "renderCard 缺 data.advice 引用"
+    # 確認 cardData mapping 有 region/advice
+    assert "region: regionVal" in html, "cardData 缺 region field"
+    assert "advice: adviceVal" in html, "cardData 缺 advice field"
+    print("✓ card renders region badge + advice in 7D mode")
+
+
 def main():
     tests = [
         test_html_exists,
@@ -165,6 +223,12 @@ def main():
         test_html_separates_src_and_dim_toggles,
         test_html_renders_7d_composite_when_mode_7d,
         test_html_7d_endpoint_url,
+        # v5.30 P3 — per-region toggle
+        test_html_has_region_toggle,
+        test_html_region_toggle_has_four_buttons,
+        test_html_setregion_handler_exists,
+        test_html_region_toggle_passes_query_param,
+        test_html_card_renders_region_badge,
     ]
     for t in tests:
         t()

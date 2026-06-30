@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Stock Team Agent — Operator Dashboard v5.27</title>
+  <title>Stock Team Agent — Operator Dashboard v5.30</title>
   <style>
     :root {
       --bg: #0f1419;
@@ -199,12 +199,18 @@
   <header>
     <div>
       <h1>Stock Team Agent — Operator Dashboard</h1>
-      <div class="subtitle">v5.28 · 11 tickers · 4D fund_heavy + 7D sentiment/news/macro · real close prices</div>
+      <div class="subtitle">v5.30 · 11 tickers · per-region 7D weights (US/HK/CN) · cn_macro_heavy default · 4D fund_heavy fallback</div>
     </div>
     <div class="controls">
       <div class="toggle" id="dim-toggle">
         <button class="active" onclick="setDimension('4d')">4D</button>
         <button onclick="setDimension('7d')">7D</button>
+      </div>
+      <div class="toggle" id="region-toggle">
+        <button class="active" onclick="setRegion('global')">Global</button>
+        <button onclick="setRegion('US')">US</button>
+        <button onclick="setRegion('HK')">HK</button>
+        <button onclick="setRegion('CN')">CN</button>
       </div>
       <div class="toggle" id="src-toggle">
         <button class="active" onclick="setCloseSource('real')">real</button>
@@ -220,7 +226,7 @@
 
   <footer>
     <div>Source: <code>scripts/tests/fixtures/tickers_fundamentals.json</code> · API: <code>scripts/dashboard_api.py</code></div>
-    <div style="margin-top:4px;">v5.26 Lesson #54 (close_source=real) · v5.28 Lesson #55 (4D→7D)</div>
+    <div style="margin-top:4px;">v5.26 Lesson #54 (close_source=real) · v5.28 Lesson #55 (4D→7D) · v5.30 Lesson #56 (cn_macro_heavy + per-region)</div>
   </footer>
 
   <script>
@@ -236,6 +242,8 @@
     let currentData = null;
     let currentSource = 'real';
     let currentDimension = '4d';   // '4d' (default) 或 '7d' (v5.28 NEW)
+    let currentRegion = 'global';  // 'global' (default), 'US', 'HK', 'CN' (v5.30 P3 NEW)
+    let regionConfig = null;       // {weights_7d, advice, color} — 從 /api/config 載入 (v5.30 P3)
 
     async function fetchCrossMarket(closeSource) {
       const url = `http://localhost:8080/api/cross_market?close_source=${closeSource}`;
@@ -244,17 +252,39 @@
       return res.json();
     }
 
-    async function fetchCrossMarket7D() {
-      const url = `http://localhost:8080/api/cross_market_7d`;
+    async function fetchCrossMarket7D(region) {
+      // v5.30 P3 — region query param 自動套用該區最佳 weight config
+      const r = region || currentRegion;
+      const url = `http://localhost:8080/api/cross_market_7d?region=${encodeURIComponent(r)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`7D API ${res.status}: ${res.statusText}`);
       return res.json();
+    }
+
+    async function loadRegionConfig() {
+      // v5.30 P3 — 從 /api/config 載入 region-tuned weights + advice
+      try {
+        const res = await fetch('http://localhost:8080/api/config');
+        if (!res.ok) return;
+        const data = await res.json();
+        regionConfig = {
+          weights_7d: data.weights_7d,
+          weights_7d_fallback: data.weights_7d_fallback,
+          per_region_weights_7d: data.per_region_weights_7d,
+          ticker_region_map: data.ticker_region_map,
+          available_regions: data.available_regions,
+        };
+      } catch (e) {
+        // API 不可用 — regionConfig 留 null,UI 仍可運作但不顯示 region badge
+      }
     }
 
     async function loadFixture() {
       // 優先嘗試 dashboard API (real backtest), fallback 至 fixture JSON
       try {
         currentData = await fetchCrossMarket(currentSource);
+        // v5.30 P3 — 同步載入 region config 供 region badge 使用
+        loadRegionConfig();
         return;
       } catch (e) {
         // API 不可用 — fallback
@@ -316,6 +346,36 @@
       } catch (e) {
         document.getElementById('grid').innerHTML =
           '<div class="error">' + dim.toUpperCase() + ' 切換失敗: ' + e.message + '<br><br>請確認 dashboard_api 已啟動: <code>cd ~/stock-team-agent && python -m uvicorn scripts.dashboard_api:app --port 8080</code></div>';
+        return;
+      }
+      render();
+    }
+
+    async function setRegion(region) {
+      // v5.30 P3 — region ∈ {'global', 'US', 'HK', 'CN'}
+      // 切換 region 後重抓 7D 數據(4D 模式不受 region 影響)
+      currentRegion = region;
+      document.querySelectorAll('#region-toggle button').forEach(b => b.classList.remove('active'));
+      event.target.classList.add('active');
+
+      // region toggle 只在 7D 模式生效(4D 用 global fund_heavy)
+      if (currentDimension !== '7d') {
+        // 4D 模式: 切到 7D 才能看到 region-tuned 結果
+        document.getElementById('grid').innerHTML =
+          '<div class="loading">切換到 7D 以套用 ' + region + ' tuned weights…</div>';
+        // 同步切到 7D
+        currentDimension = '7d';
+        document.querySelectorAll('#dim-toggle button').forEach(b => b.classList.remove('active'));
+        // 第 2 個 button 是 7D
+        document.querySelectorAll('#dim-toggle button')[1].classList.add('active');
+      }
+
+      document.getElementById('grid').innerHTML = '<div class="loading">載入 ' + region + ' 區域 tuned weights…</div>';
+      try {
+        currentData = await fetchCrossMarket7D(region);
+      } catch (e) {
+        document.getElementById('grid').innerHTML =
+          '<div class="error">Region ' + region + ' 切換失敗: ' + e.message + '<br><br>請確認 dashboard_api 已啟動。</div>';
         return;
       }
       render();
@@ -383,8 +443,12 @@
         <div class="card">
           <div class="card-header">
             <div class="ticker">${ticker}</div>
-            <div class="risk-badge risk-${risk}">${risk === 'high' ? '🔴 HIGH' : '🟢 LOW'}</div>
+            <div style="display:flex;gap:4px;align-items:center;">
+              ${is7D && data.region ? `<div class="risk-badge" style="background:rgba(99,102,241,0.2);color:#818cf8;font-size:10px;">${data.region}</div>` : ''}
+              <div class="risk-badge risk-${risk}">${risk === 'high' ? '🔴 HIGH' : '🟢 LOW'}</div>
+            </div>
           </div>
+          ${is7D && data.advice ? `<div style="font-size:10px;color:var(--text-dim);margin-bottom:8px;padding:4px 6px;background:rgba(99,102,241,0.05);border-radius:4px;">💡 ${data.advice}</div>` : ''}
           <div class="signal-row">
             <span>BUY ${(data.buy_ratio*100).toFixed(1)}%</span>
             <span>HOLD ${(data.hold_ratio*100).toFixed(1)}%</span>
@@ -482,6 +546,10 @@
       const cardData = {};
       for (const ticker of tickers) {
         const d = pt[ticker];
+        // v5.30 P3 — 從 API response 抓 region/advice (API 已加這兩個 keys)
+        // 優先用 ticker 自身的 region,fallback 至 currentRegion
+        const regionVal = d.region || currentRegion;
+        const adviceVal = d.advice || (regionConfig && regionConfig.per_region_weights_7d && regionConfig.per_region_weights_7d[regionVal] && regionConfig.per_region_weights_7d[regionVal]._source) || 'cn_macro_heavy';
         cardData[ticker] = {
           buy_ratio: d.buy_ratio,
           hold_ratio: d.hold_ratio,
@@ -491,6 +559,8 @@
           composite_7d: d.composite_7d,
           signal: d.signal,
           signal_entropy: 0,  // 7D 沒信號熵 (純 composite)
+          region: regionVal,  // v5.30 P3
+          advice: adviceVal,  // v5.30 P3
           components: {
             market: d.market,
             technical: d.tech,

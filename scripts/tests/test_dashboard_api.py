@@ -185,7 +185,7 @@ class TestDashboard7DEndpoint(unittest.TestCase):
         self.assertEqual(len(data["per_ticker"]), 11)
 
     def test_7d_endpoint_per_ticker_shape(self):
-        """A17: per_ticker[AAPL] 必須含 7 維度 + composite_7d + signal"""
+        """A17: per_ticker[AAPL] 必須含 7 維度 + composite_7d + signal + region + advice (v5.30 P3)"""
         r = client.get("/api/cross_market_7d")
         data = r.json()
         aapl = data["per_ticker"]["AAPL"]
@@ -194,17 +194,24 @@ class TestDashboard7DEndpoint(unittest.TestCase):
             "sentiment", "news", "macro",
             "composite_7d", "signal",
             "majority", "buy_ratio", "hold_ratio", "sell_ratio",
+            # v5.30 P3 NEW — per-region advice
+            "region", "advice",
         }
         self.assertEqual(set(aapl.keys()), expected_keys)
         self.assertIn(aapl["signal"], {"BUY", "HOLD", "SELL"})
+        # v5.30 P3 — region 必須 ∈ {US, HK, CN, global}
+        self.assertIn(aapl["region"], {"US", "HK", "CN", "global"})
+        # advice 是字串且包含 weight config 名稱
+        self.assertIsInstance(aapl["advice"], str)
+        self.assertGreater(len(aapl["advice"]), 0)
 
     def test_7d_endpoint_config_block(self):
-        """A18: response.config 含 weights_7d + source + version"""
+        """A18: response.config 含 weights_7d + source + version (v5.30 升為 5.30.0)"""
         r = client.get("/api/cross_market_7d")
         data = r.json()
         cfg = data["config"]
         self.assertEqual(cfg["source"], "fixture_signal_distribution_per_ticker")
-        self.assertEqual(cfg["version"], "5.28.0")
+        self.assertEqual(cfg["version"], "5.30.0")  # v5.30 P1 升級
         self.assertIn("macro", cfg["weights_7d"])
 
     def test_7d_endpoint_ticker_filter(self):
