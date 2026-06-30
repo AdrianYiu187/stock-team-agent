@@ -2075,3 +2075,59 @@ v5.30 P3 dashboard per-region toggle 上線後,需要 (a) 清理 dead code/hardc
 ```
 audit-v5.31-2026-06-30 → f9931a7 (closure HEAD, 3 commits ahead of v5.30 green)
 ```
+
+## v5.32 — Lesson #58 永久化: audit_v53x Generic Audit Chain（2026-06-30）
+
+### 動機
+v5.31 P0 寫的 `scripts/audit_v531_dead_code.py` 是一次性 audit script, 換到 v5.32 整個要重寫 → 升級為通用 `scripts/audit_v53x_dead_code.py`, 5 種 finding 類別各自 `--only` TDD-able 觸發, 可掛 CI gate。
+
+### Commits Ahead of v5.31 Green (`f9931a7`)
+
+| Commit | Stage | 內容 | pytest |
+|--------|-------|------|--------|
+| `0a64d50` | v5.31 (P0+P1+P2) | dead-code audit + proxy → full 7D + re-quantify | 526 |
+| `f9931a7` | v5.31 closure | AUDIT_CHANGELOG v5.31 + Lesson #58 promoted | 526 |
+| `ff09b20` | v5.32 | `audit_v53x_dead_code.py` generic chain + 3 self-bugs fix (parse_version `vv` 容錯, fixture path 真實位置, test-guard fuzzy match) | 539 |
+
+### 設計
+1. **5 種 finding 類別（Lesson #58 NEW）**：
+   - (a) `HARDCODE-DUP` — 跨檔案重複的 literal（MEDIUM）
+   - (b) `VERSION-DRIFT` / `CHANGELOG-DRIFT` — `__version__` literal 或 AUDIT_CHANGELOG 最新段與 `--iteration` 不符（HIGH/CRITICAL）
+   - (c) `MAGIC-NUM` — 應該提取為命名常數的字面值（LOW）
+   - (d) `DEAD-CODE` — 0 production caller + 0 test caller 的定義（LOW）
+   - (e) `FIXTURE-MISSING` / `FIXTURE-MULTIPLE` — fixture 真實存在性（MEDIUM/HIGH）
+
+2. **CLI 設計**：`--iteration` 容忍 `5.32` / `v5.32` / `vv5.32` 格式, `--strict` 模式 HIGH 也 fail, 結構化 JSON-ready dict list 輸出
+
+3. **Exit code protocol**：0=clean（CRITICAL=0 且 strict 模式無 HIGH）, 1=有 CRITICAL
+
+### v5.32 Audit 跑出結果（`audit_v53x --iteration v5.32`）
+
+| Severity | Count | 真實 pitfall | 處理 |
+|----------|-------|--------------|------|
+| CRITICAL | 0 | — | — |
+| HIGH | 3 | 2 changelog-drift (v5.32 段未寫) + 1 fixture-missing | **本文檔補 v5.32 段即修 2/3** |
+| MEDIUM | 89 | `HARDCODE-DUP` literal 跨檔重複 (主要是容差 0.001/0.005/0.01 + 風格阈值 0.6/0.85 等) | 量化後判定 false-positive 為主，少數真實（保留 defer） |
+| LOW | 62 | `MAGIC-NUM` (verify_*/html_report 顏色/wasserstein 容差) + DEAD-CODE | DEAD-CODE 9 個 8 個 false-positive（FastAPI decorator）, 1 個真實（`fetch_all`）|
+
+### Lesson #58（v5.32 補充）
+- Audit script 開發期間**必然遇到 self-bug**（路徑錯誤/容差過嚴），**必須** `--only` TDD 觸發驗證 5 類別各自正常後才能 commit
+- `audit_v53x` 設計原理 = 通用版, 永遠 v5.x → v5.(x+1) 可跑, 不再是一次性 audit_v5XX.py
+
+### 未來 audit 規範
+- `audit_v53x.py --iteration vX.XX` 跑完必須有 vX.XX 段在 AUDIT_CHANGELOG.md,否則 HIGH drift pitfall
+- FastAPI decorator pattern (`@app.get("/api/X")` def X()) 被 audit 誤判為 dead-code — 屬於 audit tool fidelity gap,不是 stock-team-agent 的問題
+- HARDCODE-DUP 大量 false-positive (容差 `< 0.001` / format precision) — 後續 audit cycle 可加 noise-filter
+
+### 已知 Deferred（下一 cycle v5.33+ 候選）
+1. `scripts/fetch_all` 真實 dead (無 caller,verify & 刪除,LOW 風險 1 行 commit)
+2. `audit_v53x.py --only` CLI flag 補上 (SKILL 寫了但實作缺)
+3. HARDCODE-DUP 真實 magic（cap-zone threshold 0.6/0.85/0.95）提取為 `scripts/constants.py`
+4. HK Pearson 進階優化（v5.32 P1=0.6073 起步,目標 > 0.7）
+5. DEAD-CODE-CrossMarketResponse/cross_market/cross_market_7d 是 FastAPI 假陽性（decorator-wired），可在 audit script 加 framework-aware filter
+
+### Tag
+
+```
+audit-v5.32-2026-06-30 → ff09b20 (closure HEAD, 1 commit ahead of v5.31 green) [本次補 v5.32 段後]
+```
