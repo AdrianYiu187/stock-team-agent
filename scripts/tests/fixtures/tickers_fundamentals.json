@@ -319,6 +319,26 @@
       "source": "yfinance real fetch (v5.26 P1)",
       "n_tickers": 11,
       "failed_tickers": []
+    },
+    "v530_p2_extended_snapshot": {
+      "snapshot_date": "2026-06-30T08:24:47.022977+00:00",
+      "tickers": [
+        "0388.HK",
+        "0941.HK",
+        "1177.HK",
+        "1299.HK",
+        "2318.HK",
+        "2628.HK",
+        "AMZN",
+        "JNJ",
+        "JPM",
+        "META",
+        "TSLA",
+        "V"
+      ],
+      "failed": [],
+      "proxy_version": "v5.30-p2-price-only",
+      "note": "Price-derived 7D proxy (tech=20d_momentum, market=52w_position, risk=vol_inv, fund/sentiment/news/macro=0.5). 用於擴大 US/HK sample 解鎖 per-region 結論。真實 7D pipeline 可日後升級。"
     }
   },
   "sentiment_per_ticker": {
@@ -1781,5 +1801,223 @@
       77.27,
       75.68
     ]
+  },
+  "extended_signal_distribution_per_ticker": {
+    "AMZN": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.4543,
+      "components": {
+        "tech": 0.3653,
+        "fund": 0.5,
+        "market": 0.5427,
+        "risk": 0.5174,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "META": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.4203,
+      "components": {
+        "tech": 0.3949,
+        "fund": 0.5,
+        "market": 0.1735,
+        "risk": 0.4491,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "TSLA": {
+      "buy_ratio": 0.33,
+      "hold_ratio": 0.34,
+      "sell_ratio": 0.33,
+      "signal_entropy": 0.5,
+      "majority": "hold",
+      "final_score": -0.1232,
+      "components": {
+        "tech": 0.4838,
+        "fund": 0.5,
+        "market": 0.6169,
+        "risk": 0.2836,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "JPM": {
+      "buy_ratio": 0.6,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.1,
+      "signal_entropy": 0.5,
+      "majority": "buy",
+      "final_score": 0.5302,
+      "components": {
+        "tech": 0.6844,
+        "fund": 0.5,
+        "market": 0.8904,
+        "risk": 0.6941,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "V": {
+      "buy_ratio": 0.33,
+      "hold_ratio": 0.34,
+      "sell_ratio": 0.33,
+      "signal_entropy": 0.5,
+      "majority": "hold",
+      "final_score": 0.2441,
+      "components": {
+        "tech": 0.5975,
+        "fund": 0.5,
+        "market": 0.7436,
+        "risk": 0.7263,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "JNJ": {
+      "buy_ratio": 0.6,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.1,
+      "signal_entropy": 0.5,
+      "majority": "buy",
+      "final_score": 0.7013,
+      "components": {
+        "tech": 0.761,
+        "fund": 0.5,
+        "market": 1.0,
+        "risk": 0.6798,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "0941.HK": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.5932,
+      "components": {
+        "tech": 0.3108,
+        "fund": 0.5,
+        "market": 0.0,
+        "risk": 0.8529,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "1299.HK": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.8771,
+      "components": {
+        "tech": 0.2838,
+        "fund": 0.5,
+        "market": 0.058,
+        "risk": 0.5202,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "0388.HK": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.5732,
+      "components": {
+        "tech": 0.3075,
+        "fund": 0.5,
+        "market": 0.0098,
+        "risk": 0.7156,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "2318.HK": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.8731,
+      "components": {
+        "tech": 0.2853,
+        "fund": 0.5,
+        "market": 0.0218,
+        "risk": 0.6732,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "2628.HK": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.5208,
+      "components": {
+        "tech": 0.3935,
+        "fund": 0.5,
+        "market": 0.2047,
+        "risk": 0.2801,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    },
+    "1177.HK": {
+      "buy_ratio": 0.1,
+      "hold_ratio": 0.3,
+      "sell_ratio": 0.6,
+      "signal_entropy": 0.5,
+      "majority": "sell",
+      "final_score": -0.8396,
+      "components": {
+        "tech": 0.3395,
+        "fund": 0.5,
+        "market": 0.0526,
+        "risk": 0.5417,
+        "sentiment": 0.5,
+        "news": 0.5,
+        "macro": 0.5
+      },
+      "is_proxy": true
+    }
   }
 }

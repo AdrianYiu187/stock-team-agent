@@ -55,6 +55,15 @@ REGION_MAP = {
     "600519.SS": "CN", "000858.SZ": "CN", "601318.SS": "CN", "000333.SZ": "CN",
 }
 
+# v5.30 P2 — 擴充 ticker region map (12 ticker 從 S&P 500 / Hang Seng)
+REGION_MAP_EXTENDED = dict(REGION_MAP)
+REGION_MAP_EXTENDED.update({
+    "AMZN": "US", "META": "US", "TSLA": "US",
+    "JPM": "US", "V": "US", "JNJ": "US",
+    "0941.HK": "HK", "1299.HK": "HK", "0388.HK": "HK",
+    "2318.HK": "HK", "2628.HK": "HK", "1177.HK": "HK",
+})
+
 
 # Weight configs 候選 (sum=1.0 for 7 keys)
 # v5.30 P1 修正: global_7d_balanced_0_15 改用 MULTIFACTOR_WEIGHTS_7D_FALLBACK (v5.28 預設)
@@ -84,7 +93,18 @@ WEIGHT_CONFIGS = {
 
 
 def _map_components(comps_raw: Dict[str, float]) -> Dict[str, float]:
-    """fixture key → 7D key mapping"""
+    """fixture key → 7D key mapping
+
+    兼容兩種 fixture 格式:
+    - 既有 11 ticker: keys 為 {technical, fundamental, market, risk, sentiment, news, macro}
+      → technical → tech, fundamental → fund
+    - v5.30 P2 擴充 12 ticker (proxy): keys 為 {tech, fund, market, risk, sentiment, news, macro}
+      → 直接對應, 不需 mapping
+    """
+    if "tech" in comps_raw:
+        # 已是 7D 標準 key (proxy 格式)
+        return {k: comps_raw[k] for k in MULTIFACTOR_WEIGHTS_7D if k in comps_raw}
+    # 既有格式 (technical/fundamental)
     return {
         "tech": comps_raw["technical"],
         "fund": comps_raw["fundamental"],
@@ -212,6 +232,92 @@ def evaluate_per_region(
     for region, report in regions_report.items():
         improvement = report["best_pearson"] - global_7d_baseline
         summary[f"{region.lower()}_improvement_pp"] = round(improvement * 100, 2)
+
+    return {
+        "regions": regions_report,
+        "global_best": global_results,
+        "summary": summary,
+    }
+
+
+def evaluate_per_region_extended(
+    fixture_path: Path = FIXTURE_PATH,
+) -> Dict:
+    """v5.30 P2 — 擴充版 evaluate, 合併既有 11 ticker + 12 擴充 ticker。
+
+    Returns:
+        {
+            "regions": { "US": {...}, "HK": {...}, "CN": {...} },  # 同 evaluate_per_region
+            "global_best": {...},  # 23 ticker vs 5 configs
+            "summary": {
+                "us_improvement_pp": ...,
+                "hk_improvement_pp": ...,
+                "cn_improvement_pp": ...,
+                "us_n_tickers": 10,
+                "hk_n_tickers": 9,
+                "cn_n_tickers": 4,
+            }
+        }
+    """
+    with open(fixture_path) as f:
+        fixture = json.load(f)
+
+    sd = fixture.get("signal_distribution_per_ticker", {})
+    sd_ext = fixture.get("extended_signal_distribution_per_ticker", {})
+    # 合併: 既有優先, 擴充補充
+    sd_merged = dict(sd_ext)
+    sd_merged.update(sd)  # 既有覆蓋擴充 (避免衝突)
+
+    # 按 region 分組
+    by_region: Dict[str, List[Tuple[str, Dict]]] = {"US": [], "HK": [], "CN": []}
+    for ticker, info in sd_merged.items():
+        region = REGION_MAP_EXTENDED.get(ticker, "US")
+        by_region[region].append((ticker, info))
+
+    regions_report = {}
+    for region, items in by_region.items():
+        if not items:
+            continue
+
+        results = {}
+        for cfg_name, weights in WEIGHT_CONFIGS.items():
+            composites = []
+            majorities = []
+            for ticker, info in items:
+                components_7d = _map_components(info["components"])
+                composite = compute_composite_with_weights(components_7d, weights)
+                composites.append(composite)
+                majorities.append({"buy": 1, "hold": 0, "sell": -1}[info["majority"]])
+
+            results[cfg_name] = round(pearson(composites, majorities), 4)
+
+        best_cfg = max(results.items(), key=lambda kv: kv[1])[0]
+        regions_report[region] = {
+            "n_tickers": len(items),
+            "tickers": [t for t, _ in items],
+            "best_config": best_cfg,
+            "best_pearson": results[best_cfg],
+            "results": results,
+        }
+
+    # Global best (23 ticker vs 每個 config)
+    global_results = {}
+    for cfg_name, weights in WEIGHT_CONFIGS.items():
+        composites = []
+        majorities = []
+        for ticker, info in sd_merged.items():
+            components_7d = _map_components(info["components"])
+            composite = compute_composite_with_weights(components_7d, weights)
+            composites.append(composite)
+            majorities.append({"buy": 1, "hold": 0, "sell": -1}[info["majority"]])
+        global_results[cfg_name] = round(pearson(composites, majorities), 4)
+
+    global_7d_baseline = global_results["global_7d_balanced_0_15"]
+    summary = {}
+    for region, report in regions_report.items():
+        improvement = report["best_pearson"] - global_7d_baseline
+        summary[f"{region.lower()}_improvement_pp"] = round(improvement * 100, 2)
+        summary[f"{region.lower()}_n_tickers"] = report["n_tickers"]
 
     return {
         "regions": regions_report,
