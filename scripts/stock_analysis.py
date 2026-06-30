@@ -381,12 +381,27 @@ def tech_score_multifactor(rsi: float, macd_val: float, price: float, ma50: floa
     # MA50 位置因子（v5.9: floor 提高 0.15 → 0.2）
     if ma50 <= 0:
         ma50_factor = 0.5  # ma50=0/負值 fallback（數據錯誤保護）
-    elif price >= ma50:
-        ratio = (price / ma50 - 1.0) / 0.2
-        ma50_factor = min(0.85, 0.6 + 0.2 * ratio)
     else:
-        ratio = (price / ma50 - 0.8) / 0.2
-        ma50_factor = max(0.2, 0.4 - 0.2 * (1 - ratio))
+        # v5.22 (Stage B-0) P41 修復: 改 absolute diff-based，解決 ratio-based 設計 pitfall
+        # 舊 v5.21: ratio = (price/ma50 - 1.0)/0.2 → price 固定時 ma50 變化比值梯度極小
+        #   真實場景: price=$200 固定 → ma50=50,100,150 → score 完全相同 0.6234 (flat)
+        #   罪魁禍首: ratio 在 ma50 << price 範圍 (e.g., price=200, ma50=50) 比率已遠 > 1
+        #   經 min(0.85, ...) clip 到 0.85 floor, 整段平掉。
+        # 新設計: ma50_pct = (price - ma50) / ma50 真實相對差,連續線性映射（無 mid cap）
+        #   ma50_pct ∈ [-1.0, +1.0]: 線性 0.2..0.8 (symmetric)
+        #   ma50_pct > 1.0 (price 倍 ma50): clip 0.8..1.0 (強 buy, 但 gradient 保留小段)
+        #   ma50_pct < -1.0 (price 為 ma50 半): clip 0.2..0.0 (強 sell, 但有限)
+        # 關鍵: 移除舊版 0.85 floor,讓真實大 pct 差異 (3.0 vs 1.0 vs 0.3) 都 distinct
+        ma50_pct = (price - ma50) / ma50
+        if ma50_pct >= 1.0:
+            # 強 buy: ma50_pct=1.0→0.8, +=0.4 漸進至 1.0
+            ma50_factor = min(1.0, 0.8 + 0.2 * min((ma50_pct - 1.0) / 1.0, 1.0))
+        elif ma50_pct >= -1.0:
+            # 中性區: ma50_pct=-1.0→0.2, ma50_pct=+1.0→0.8 (linear)
+            ma50_factor = 0.5 + 0.3 * ma50_pct
+        else:
+            # 強 sell: ma50_pct=-1.0→0.2, -=0.4 漸進至 0.0
+            ma50_factor = max(0.0, 0.2 + 0.2 * max((-1.0 - ma50_pct) / 1.0, 0.0))
 
     # v5.11 (Stage 4.2) N15 修復: momentum [-20, -10] 全 0.4450 + [10, 20] 全 0.6075（雙 cap flatline）
     # 統一為 momentum -50% ~ +50% 連續線性（高分 = 強動量 / 低分 = 弱動量）
