@@ -1967,3 +1967,75 @@ v5.27 Step 3 candidate 量化發現 4D 整合在真實下整體負貢獻 (Δ -28
 ```
 audit-v5.28-2026-06-30 → 1e560cf (closure HEAD, 2 commits ahead of v5.27 green)
 ```
+
+## v5.30 P1 — cn_macro_heavy 升級為 7D 預設（2026-06-30）
+
+### 動機
+v5.29 candidate 量化 (`e1d3e12`) 揭示 5 個 weight configs 中 cn_macro_heavy 全域最佳
+(Pearson = +0.7730, vs v5.28 full_7d_balanced_0_15 = +0.6549, **改善 +11.81pp**)。
+但 per-region 反轉結論: CN region 內 4 個 ticker 中 `global_4d_fund_heavy` (+0.9452) > cn_macro_heavy (+0.4111)
+→ A 股 4 ticker 樣本中 4D 反而最穩定。必須保留 fallback 機制供 per-region 切換。
+
+### 2 Commits Ahead of v5.28 Green (`1e560cf`)
+
+| Commit | Stage | 內容 | pytest |
+|--------|-------|------|--------|
+| `8cbaeea` | P1 red | `test_v530_cn_macro_heavy_default.py` 5 TDD guards (red) | 496 (5 fail) |
+| `bb7d320` | P1 green | `cn_macro_heavy` 升級為預設 + FALLBACK + helper + 既有測試更新 | **503** (+7) |
+
+### 設計
+
+1. **MULTIFACTOR_WEIGHTS_7D → cn_macro_heavy (新預設)**:
+   ```python
+   {tech: 0.10, fund: 0.25, market: 0.10, risk: 0.05,
+    sentiment: 0.15, news: 0.10, macro: 0.25}
+   ```
+   業務理由: A 股 (4 ticker 樣本中) 對 macro + sentiment + news 維度最敏感
+   (政策驅動 / 散戶情緒 / 媒體報導), 拉高整體 Pearson。
+
+2. **MULTIFACTOR_WEIGHTS_7D_FALLBACK → full_7d_balanced_0_15 (v5.28 預設保留)**:
+   用途: CN region 4 ticker 反轉情況下, 明確呼叫
+   `apply_7d_weights_v530(components, weights=MULTIFACTOR_WEIGHTS_7D_FALLBACK)` 退回 v5.28 行為。
+   Sample 4 樣本仍 noise 偏大, 真實採納前需擴大至 ≥ 10 ticker。
+
+3. **新 helper `apply_7d_weights_v530(components, weights=None)`**:
+   - 不傳 weights → 套用新預設 cn_macro_heavy
+   - 傳 weights=FALLBACK → 套用 v5.28 預設
+   - 傳自訂 dict → 套用該 dict (quantify 工具鏈使用)
+
+4. **修正 baseline bug** (重要): `quantify_v529_per_region_sensitivity.py` 中
+   `WEIGHT_CONFIGS["global_7d_balanced_0_15"]` 原本用 `dict(MULTIFACTOR_WEIGHTS_7D)` —
+   **這是 reference 共享**, 當 v5.30 把預設改為 cn_macro_heavy 時, baseline 也跟著改變,
+   失去 v5.28 語意。改用 `dict(MULTIFACTOR_WEIGHTS_7D_FALLBACK)` 鎖定 v5.28 值。
+   教訓: candidate 評估必須用**值快照** (literal dict) 而非 reference 共享。
+
+5. **Dashboard `/api/config` 暴露兩個 keys**:
+   - `weights_7d` = cn_macro_heavy (當前預設)
+   - `weights_7d_fallback` = full_7d_balanced_0_15 (回退用)
+   - `version` = 5.30.0
+
+### 量化彙整
+
+| 指標 | 數值 |
+|------|------|
+| pytest | **503 passed** (496 → 503, +7) |
+| Pearson 改善 (v5.30 預設 vs v5.28 baseline) | **+11.81pp** (0.7730 vs 0.6549) |
+| FALLBACK 機制 | per-region 反轉情況可用, 呼叫明確 |
+| v5.29 candidate 重現性 | 量化結論鎖定 (test_v529 + 修正 bug) |
+
+### Lesson #55 升級為 Lesson #56
+- 從「4D 整合不足以反映多因子風險」升級為
+- **「7D 預設值必須來自 candidate 量化, 不能任意設定」**
+- v5.28 P1 的 full_7d_balanced_0_15 是初版, 經 v5.29 candidate 評估後被 cn_macro_heavy 取代
+- 任何 7D weights 升級 → 必須有量化候選 (≥ 5 configs) 與 baseline noise floor 保護
+
+### 未來 audit 規範
+- 7D weights 升級流程: 量化候選 (5+ configs) → noise floor 保護 → 寫 TDD guards 鎖定可重現性
+- Per-region 反轉結論 → 保留 FALLBACK 機制, 不直接覆蓋預設
+- 任何 candidate 評估腳本 → 必須用 literal dict 而非 reference 共享
+
+### Tag
+
+```
+audit-v5.30-2026-06-30 → bb7d320 (closure HEAD, 4 commits ahead of v5.28 green)
+```
