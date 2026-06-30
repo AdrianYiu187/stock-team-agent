@@ -34,7 +34,7 @@ import statistics
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -287,8 +287,22 @@ def run_v510_backtest_path(close: np.ndarray, days: int = 90) -> List[Dict]:
     return predictions
 
 
-def run_v5113_backtest_path(close: np.ndarray, days: int = 90) -> List[Dict]:
+def run_v5113_backtest_path(
+    close: np.ndarray,
+    days: int = 90,
+    *,
+    pe: float = 25.0,
+    roe: float = 1.5,
+    peg_val: float = 1.2,
+    revenue_growth: float = 0.10,
+) -> List[Dict]:
     """v5.11.3 路徑：4 維度 multifactor 整合。
+
+    Args:
+        close: 收盤價 array
+        days: 取最近 N 日回測
+        pe/roe/peg_val/revenue_growth: v5.25 P1 真實 fundamental 注入,
+            默認 mock 值對齊 v5.22 rationale (向後相容)
 
     返回每日預測 dict list（含 4 維度分數 + composite + signal）。
     """
@@ -310,6 +324,7 @@ def run_v5113_backtest_path(close: np.ndarray, days: int = 90) -> List[Dict]:
             close=close, i=i,
             sma_50_arr=sma_50, rsi_arr=rsi, macd_hist_arr=macd_hist,
             momentum_20d_arr=momentum_20d,
+            pe=pe, roe=roe, peg_val=peg_val, revenue_growth=revenue_growth,
         )
         predictions.append({
             "i": i,
@@ -490,6 +505,117 @@ def print_report(result: Dict) -> None:
           f"market={std['market']:.4f}, risk={std['risk']:.4f}, "
           f"composite={std['composite']:.4f}")
     print("=" * 70)
+
+
+# ============================================================================
+# v5.25 P1 — Cross-Market 真實 fundamental 注入整合
+# ============================================================================
+
+def run_cross_market_comparison(
+    n_days: int = 120,
+    seed: int = 42,
+    tickers: Optional[List[str]] = None,
+    fixtures_path: Optional[Path] = None,
+) -> Dict:
+    """v5.25 P1 — 跨 11 ticker 真實 fundamental 注入 backtest。
+
+    對齊 cross-market E2E 真實 fixtures (per Lesson #52 量化決策):
+    - 從 tests/fixtures/tickers_fundamentals.json 載入 11 ticker 真實 PE/ROE/PEG/growth
+    - 每 ticker 跑 v5.10 (技術 only) + v5.11.3 (4D with 真實 fund) 兩條路徑
+    - 整合 cap-zone warning API (Lesson #49),3690.HK PEG=28.72 自動 emit
+
+    Args:
+        n_days: 每 ticker backtest 天數 (mock GBM per v5.22 rationale)
+        seed: mock GBM deterministic seed
+        tickers: 自訂 ticker list (default = TICKER_UNIVERSE 11 ticker)
+        fixtures_path: 自訂 fixture 路徑 (default = tests/fixtures/tickers_fundamentals.json)
+
+    Returns:
+        dict 含:
+        - "v5.10": {overall_accuracy, ...}  (技術 only aggregate)
+        - "v5.11.3": {overall_accuracy, ...} (4D aggregate)
+        - "per_ticker": {ticker: {tech, fund, market, risk, composite, n_predictions}}
+        - "cap_warnings": [{metric, tickers, threshold_value, is_by_design, n_in_cap_zone}]
+    """
+    # 延遲 import 避免 circular dependency (live_score_engine 也 import backtest chain)
+    from data_sources.live_score_engine import (
+        recompute_cross_market_with_cap_warnings,
+    )
+
+    # 1. 載入 fixture 11 ticker 真實 fundamental
+    if fixtures_path is None:
+        # v5.25 P1 — 用 __file__ 推算 fixture 路徑,避免 _TESTS_DIR global
+        fixtures_path = Path(__file__).resolve().parent / "tests" / "fixtures" / "tickers_fundamentals.json"
+    if tickers is None:
+        # 從 fixture 拿 ticker order (避免 hardcode duplication)
+        with open(fixtures_path, "r", encoding="utf-8") as f:
+            fixture_data = json.load(f)
+        tickers = list(fixture_data["fundamentals"].keys())
+        fundamentals_raw = fixture_data["fundamentals"]
+    else:
+        with open(fixtures_path, "r", encoding="utf-8") as f:
+            fixture_data = json.load(f)
+        fundamentals_raw = {t: fixture_data["fundamentals"][t] for t in tickers if t in fixture_data["fundamentals"]}
+
+    # 2. 跑 v5.10 (技術 only, 無 fund 依賴)
+    v510_all_preds = []
+    for ticker in tickers:
+        if ticker not in fundamentals_raw:
+            continue
+        close = generate_mock_prices(n_days=n_days, seed=seed)
+        v510_preds = run_v510_backtest_path(close, days=90)
+        v510_all_preds.extend(v510_preds)
+
+    v510_metrics = evaluate_predictions(v510_all_preds)
+
+    # 3. 跑 v5.11.3 (4D, 注入真實 fund per ticker)
+    per_ticker: Dict[str, Dict] = {}
+    v5113_all_preds = []
+    for ticker in tickers:
+        if ticker not in fundamentals_raw:
+            continue
+        fund = fundamentals_raw[ticker]
+        close = generate_mock_prices(n_days=n_days, seed=seed)
+        v5113_preds = run_v5113_backtest_path(
+            close, days=90,
+            pe=float(fund.get("pe", 25.0)),
+            roe=float(fund.get("roe", 1.5)),
+            peg_val=float(fund.get("peg") or 1.2),
+            revenue_growth=float(fund.get("growth", 0.10)),
+        )
+        v5113_all_preds.extend(v5113_preds)
+
+        # per-ticker summary (mean 4D 維度)
+        if v5113_preds:
+            per_ticker[ticker] = {
+                "tech": round(statistics.mean(p["tech"] for p in v5113_preds), 4),
+                "fund": round(statistics.mean(p["fund"] for p in v5113_preds), 4),
+                "market": round(statistics.mean(p["market"] for p in v5113_preds), 4),
+                "risk": round(statistics.mean(p["risk"] for p in v5113_preds), 4),
+                "composite": round(statistics.mean(p["composite"] for p in v5113_preds), 4),
+                "n_predictions": len(v5113_preds),
+            }
+
+    v5113_metrics = evaluate_predictions(v5113_all_preds)
+
+    # 4. 跑 cap-zone warning API (Lesson #49 整合)
+    cap_result = recompute_cross_market_with_cap_warnings(fundamentals_raw)
+
+    return {
+        "config": {
+            "n_days": n_days, "seed": seed, "n_tickers": len(per_ticker),
+            "weights": MULTIFACTOR_WEIGHTS,
+        },
+        "v5.10": v510_metrics,
+        "v5.11.3": v5113_metrics,
+        "per_ticker": per_ticker,
+        "cap_warnings": cap_result["cap_warnings"],
+        "improvement_v5.11.3_over_v5.10_pp": {
+            k: round(v5113_metrics[k] - v510_metrics[k], 4)
+            for k in ["overall_accuracy", "directional_accuracy",
+                      "precision_buy", "precision_sell"]
+        },
+    }
 
 
 # ============================================================================
